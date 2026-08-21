@@ -56,12 +56,17 @@ fn inject(point: FailPoint) {
                     item.expect("csv row must not outrank missing bin bytes");
                 }
             }
-            _ => {
+            FailPoint::AfterValidate | FailPoint::AfterBinAppend | FailPoint::AfterBinSync => {
                 assert_eq!(
                     session.consistency().committed_samples,
                     0,
                     "injected {point:?} must not yield a committed csv row"
                 );
+            }
+            FailPoint::CompleteManifest
+            | FailPoint::FailManifest
+            | FailPoint::CompleteAndFailManifest => {
+                panic!("commit injection used a finalization fail point {point:?}")
             }
         },
         Err(RecordingError::Corrupt { .. }) => {}

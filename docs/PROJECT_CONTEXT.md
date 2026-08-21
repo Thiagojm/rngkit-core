@@ -30,3 +30,8 @@ descriptive cumulative statistics, and can export an Excel report.
 - Source crates stay external, revision-pinned Git dependencies
 - Default tests never enumerate or open hardware
 - Do not persist serials, OS device paths, seeds, or PRNG state
+- Native manifests and report paths must stay inside the selected session directory
+- Native BIN, CSV, and `manifest.json` opens must not follow links out of the session
+- Event-sink and completed-manifest failures finalize the session as failed and keep the primary error
+- XLSX uses a unique create-new temp; `ErrorIfExists` must not replace a concurrent destination
+- Legacy BIN import streams one sample at a time; CSV one-counts cannot exceed sample bits

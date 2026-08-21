@@ -1,16 +1,16 @@
 //! Workbook cell and chart OOXML verification.
 
-use std::io::{Read, Write};
+use std::io::Read;
 
 use calamine::{Data, Reader, Xlsx, open_workbook};
 use rngkit_core::{
     IntervalSeconds, SampleBits, SampleIndex, SampleRecord, SessionStatus, SourceId,
     TimestampProvenance, UtcTimestamp,
 };
-use rngkit_recording::{NormalizedMeta, NormalizedSession};
+use rngkit_recording::{NormalizedMeta, NormalizedSession, SessionStem};
 use rngkit_xlsx::{
     EXCEL_MAX_SAMPLE_ROWS, Overwrite, REF_MINUS, REF_PLUS, SAMPLES_SHEET, SUMMARY_SHEET, XlsxError,
-    write_report,
+    native_report_path, with_report_promote_hook, with_workbook_write_failure, write_report,
 };
 use tempfile::tempdir;
 use zip::ZipArchive;
@@ -163,23 +163,132 @@ fn row_limit_fails_without_partial_file() {
     assert!(!dest.exists());
 }
 
-#[test]
-fn injected_tmp_failure_leaves_no_final() {
-    let dir = tempdir().unwrap();
-    let dest = dir.path().join("report.xlsx");
-    let tmp = dir.path().join(".report.xlsx.tmp");
-    let mut f = std::fs::File::create(&tmp).unwrap();
-    f.write_all(b"partial").unwrap();
-    drop(f);
+fn try_file_symlink(target: &std::path::Path, link: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).expect("unix file symlink");
+        true
+    }
     #[cfg(windows)]
     {
-        let _ = std::fs::File::open(&tmp).unwrap();
+        match std::os::windows::fs::symlink_file(target, link) {
+            Ok(()) => true,
+            Err(err) => {
+                eprintln!("skipping real file-symlink coverage: {err}");
+                false
+            }
+        }
     }
+}
+
+#[test]
+fn preexisting_predictable_temp_is_not_reused() {
+    let dir = tempdir().unwrap();
+    let dest = dir.path().join("report.xlsx");
+    let predictable = dir.path().join(".report.xlsx.tmp");
+    let stale = b"stale-temp-must-not-be-truncated";
+    std::fs::write(&predictable, stale).unwrap();
     let session = session_with(&[4]);
-    let _ = write_report(&session, &dest, Overwrite::ErrorIfExists);
-    if dest.exists() {
-        let bytes = std::fs::read(&dest).unwrap();
-        assert_ne!(&bytes, b"partial");
-        assert!(bytes.len() > 8);
+    write_report(&session, &dest, Overwrite::ErrorIfExists).unwrap();
+    assert!(dest.exists());
+    let dest_bytes = std::fs::read(&dest).unwrap();
+    assert_ne!(&dest_bytes, stale);
+    assert!(dest_bytes.len() > 8);
+    assert_eq!(std::fs::read(&predictable).unwrap(), stale);
+}
+
+#[test]
+fn preexisting_temp_symlink_is_not_followed() {
+    let dir = tempdir().unwrap();
+    let dest = dir.path().join("report.xlsx");
+    let outside = dir.path().join("outside.bin");
+    let secret = b"xlsx-must-not-touch-this";
+    std::fs::write(&outside, secret).unwrap();
+    let predictable = dir.path().join(".report.xlsx.tmp");
+    let linked = try_file_symlink(&outside, &predictable);
+    if !linked {
+        std::fs::write(&predictable, secret).unwrap();
     }
+    write_report(&session_with(&[4]), &dest, Overwrite::ErrorIfExists).unwrap();
+    assert!(dest.exists());
+    assert_ne!(std::fs::read(&dest).unwrap(), secret);
+    assert_eq!(std::fs::read(&outside).unwrap(), secret);
+    if linked {
+        assert!(predictable.exists());
+    }
+}
+
+#[test]
+fn error_if_exists_rejects_destination_created_before_promote() {
+    let dir = tempdir().unwrap();
+    let dest = dir.path().join("report.xlsx");
+    let dest_for_hook = dest.clone();
+    let concurrent = b"concurrent-destination";
+    let err = with_report_promote_hook(
+        move |_tmp| {
+            std::fs::write(&dest_for_hook, concurrent).unwrap();
+        },
+        || write_report(&session_with(&[4]), &dest, Overwrite::ErrorIfExists),
+    )
+    .unwrap_err();
+    assert!(matches!(err, XlsxError::AlreadyExists { .. }));
+    assert_eq!(std::fs::read(&dest).unwrap(), concurrent);
+}
+
+#[test]
+fn replace_overwrites_existing_destination() {
+    let dir = tempdir().unwrap();
+    let dest = dir.path().join("report.xlsx");
+    std::fs::write(&dest, b"old-report").unwrap();
+    write_report(&session_with(&[4]), &dest, Overwrite::Replace).unwrap();
+    let bytes = std::fs::read(&dest).unwrap();
+    assert_ne!(&bytes, b"old-report");
+    assert!(bytes.len() > 8);
+}
+
+#[test]
+fn workbook_generation_failure_cleans_temp_and_preserves_neighbors() {
+    let dir = tempdir().unwrap();
+    let dest = dir.path().join("report.xlsx");
+    let outside = dir.path().join("outside.bin");
+    let secret = b"neighbor-must-survive";
+    std::fs::write(&outside, secret).unwrap();
+    std::fs::write(&dest, b"pre-existing").unwrap();
+    let err = with_workbook_write_failure(|| {
+        write_report(&session_with(&[4]), &dest, Overwrite::Replace)
+    })
+    .unwrap_err();
+    assert!(matches!(err, XlsxError::Workbook(_)));
+    assert_eq!(std::fs::read(&dest).unwrap(), b"pre-existing");
+    assert_eq!(std::fs::read(&outside).unwrap(), secret);
+    let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name.starts_with(".rngkit-xlsx-") && name.ends_with(".tmp"))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "owned xlsx temp leftover: {leftovers:?}"
+    );
+}
+
+#[test]
+fn native_report_path_stays_inside_session_dir() {
+    let dir = tempdir().unwrap();
+    let session_dir = dir.path().join("session");
+    std::fs::create_dir(&session_dir).unwrap();
+    let stem = SessionStem::parse("20260821T183000_pseudo_s8_i1").unwrap();
+    let path = native_report_path(&session_dir, &stem).unwrap();
+    let root = session_dir.canonicalize().unwrap();
+    assert!(path.starts_with(&root));
+    assert_eq!(
+        path.file_name().and_then(|n| n.to_str()),
+        Some("20260821T183000_pseudo_s8_i1.xlsx")
+    );
+    assert!(SessionStem::parse("../outside").is_err());
+    assert!(SessionStem::parse("..\\outside").is_err());
+
+    write_report(&session_with(&[4]), &path, Overwrite::ErrorIfExists).unwrap();
+    assert!(path.exists());
+    assert!(!dir.path().join("outside.xlsx").exists());
 }

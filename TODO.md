@@ -2,9 +2,15 @@
 
 ## Done
 
-- Implemented the six-crate workspace from the approved 2026-08-21 design/plan
-- Deterministic stable and MSRV 1.85 validation passed on Windows without hardware
-- Physical adapter tests exist behind `#[ignore]` and were not run
+- Six-crate workspace from the approved 2026-08-21 design/plan (`first impl`)
+- Review safety and terminal-state corrections: UTF-8 timestamps, CSV
+  one-count bounds, streaming legacy BIN, manifest stem/path checks,
+  no-follow native artifact opens, race-safe XLSX temps/`ErrorIfExists`,
+  and failed-session finalization for sink and completed-manifest errors
+- Windows deterministic stable and MSRV 1.85 validation: 77 regular tests,
+  7 doctests
+- Physical BitBabbler, TrueRNG3, and RDSEED tests passed serially on this
+  Windows host
 
 ## In progress
 
@@ -13,9 +19,6 @@
 
 ## Next steps
 
-- After explicit authorization: commit (this work did not commit)
-- Run ignored hardware tests serially when BitBabbler / TrueRNG3 / RDSEED are
-  attached: `cargo test -p rngkit-sources --test hardware -- --ignored --test-threads=1 --nocapture`
 - Treat Linux CI as unverified until a remote job actually passes
 - Start the Tauri app only after this library contract is accepted as the base
 

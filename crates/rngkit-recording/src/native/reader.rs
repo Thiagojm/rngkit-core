@@ -8,7 +8,9 @@ use rngkit_core::{SampleRecord, count_ones};
 
 use crate::consistency::{ConsistencyReport, ConsistencyWarning};
 use crate::error::RecordingError;
+use crate::fsutil::open_contained;
 use crate::manifest::Manifest;
+use crate::naming::SessionStem;
 use crate::native::csv::NativeCsvRow;
 use crate::normalized::{NormalizedSession, SessionOrigin};
 
@@ -16,9 +18,11 @@ use crate::normalized::{NormalizedSession, SessionOrigin};
 #[derive(Debug)]
 pub struct NativeSession {
     dir: PathBuf,
+    stem: SessionStem,
     manifest: Manifest,
     csv_path: PathBuf,
     bin_path: PathBuf,
+    bin: File,
     report: ConsistencyReport,
     records: Vec<SampleRecord>,
 }
@@ -34,14 +38,15 @@ impl NativeSession {
     /// Returns [`RecordingError::Corrupt`] when CSV points past BIN EOF or
     /// indexes/offsets/lengths are not contiguous.
     pub fn open(dir: impl AsRef<Path>) -> Result<Self, RecordingError> {
-        let dir = dir.as_ref().to_path_buf();
+        let dir = fs::canonicalize(dir.as_ref())?;
         let manifest = Manifest::read_from(&dir)?;
-        let csv_path = dir.join(manifest.csv_file());
-        let bin_path = dir.join(manifest.bin_file());
+        let stem = manifest.session_stem()?;
+        let (csv_path, csv_file) = open_contained(&dir, manifest.csv_file())?;
+        let (bin_path, bin) = open_contained(&dir, manifest.bin_file())?;
         let mut csv = csv::ReaderBuilder::new()
             .has_headers(true)
-            .from_path(&csv_path)?;
-        let bin_len = fs::metadata(&bin_path)?.len();
+            .from_reader(csv_file);
+        let bin_len = bin.metadata()?.len();
         let sample_bytes = u64::from(manifest.sample_bits().bytes()? as u32);
         let mut records = Vec::new();
         let mut expected_index = 1u64;
@@ -104,9 +109,11 @@ impl NativeSession {
         }
         Ok(Self {
             dir,
+            stem,
             manifest,
             csv_path,
             bin_path,
+            bin,
             report,
             records,
         })
@@ -116,6 +123,12 @@ impl NativeSession {
     #[must_use]
     pub fn directory(&self) -> &Path {
         &self.dir
+    }
+
+    /// Validated session stem.
+    #[must_use]
+    pub fn session_stem(&self) -> &SessionStem {
+        &self.stem
     }
 
     /// Manifest.
@@ -139,7 +152,7 @@ impl NativeSession {
     /// Streams the raw bytes for committed samples without loading the whole BIN.
     pub fn raw_samples(&self) -> RawSampleIter<'_> {
         RawSampleIter {
-            bin_path: &self.bin_path,
+            bin: &self.bin,
             records: self.records.iter(),
             file: None,
         }
@@ -166,7 +179,7 @@ impl NativeSession {
 
 /// Iterator that seeks and reads one committed sample at a time.
 pub struct RawSampleIter<'a> {
-    bin_path: &'a Path,
+    bin: &'a File,
     records: std::slice::Iter<'a, SampleRecord>,
     file: Option<File>,
 }
@@ -185,7 +198,7 @@ fn read_one(
     record: SampleRecord,
 ) -> Result<(SampleRecord, Vec<u8>), RecordingError> {
     if iter.file.is_none() {
-        iter.file = Some(File::open(iter.bin_path)?);
+        iter.file = Some(iter.bin.try_clone()?);
     }
     let file = iter.file.as_mut().expect("opened");
     let offset = record

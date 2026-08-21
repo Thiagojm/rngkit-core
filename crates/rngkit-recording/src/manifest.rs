@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use time::UtcOffset;
 
 use crate::error::RecordingError;
-use crate::fsutil::replace_bytes;
+use crate::fsutil::{read_contained, replace_bytes, validate_contained_name};
 use crate::naming::SessionStem;
 
 /// Manifest schema version implemented by this crate.
@@ -94,10 +94,21 @@ impl Manifest {
         self.schema_version
     }
 
-    /// Session stem.
+    /// Session stem string.
     #[must_use]
     pub fn stem(&self) -> &str {
         &self.stem
+    }
+
+    /// Parsed session stem.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordingError::InvalidName`] when the stored stem does not
+    /// match the version 3 grammar. Successful [`Self::read_from`] and
+    /// [`Self::recording`] values always parse.
+    pub fn session_stem(&self) -> Result<SessionStem, RecordingError> {
+        SessionStem::parse(&self.stem)
     }
 
     /// Stored status.
@@ -252,21 +263,76 @@ impl Manifest {
 
     /// Reads and rejects unknown schema versions.
     ///
+    /// On load, the stem is parsed through the version 3 grammar and `bin_file`
+    /// / `csv_file` must be the exact same-stem basenames. Source ID, sample
+    /// bits, interval, and fold must match the parsed stem.
+    ///
     /// # Errors
     ///
     /// Returns [`RecordingError::UnsupportedSchema`] when `schema_version` is
-    /// not 1.
+    /// not 1. Returns path or consistency errors for a tampered manifest.
     pub fn read_from(dir: &Path) -> Result<Self, RecordingError> {
-        let path = dir.join("manifest.json");
-        let bytes = std::fs::read(path)?;
+        let bytes = read_contained(dir, "manifest.json")?;
         let manifest: Self = serde_json::from_slice(&bytes)?;
         if manifest.schema_version != SCHEMA_VERSION {
             return Err(RecordingError::UnsupportedSchema {
                 version: manifest.schema_version,
             });
         }
+        manifest.validate_loaded(dir)?;
         Ok(manifest)
     }
+
+    fn validate_loaded(&self, dir: &Path) -> Result<SessionStem, RecordingError> {
+        let parsed = SessionStem::parse(&self.stem)?;
+        validate_contained_name(&self.bin_file, dir)?;
+        validate_contained_name(&self.csv_file, dir)?;
+        require_same_stem_file(&self.bin_file, parsed.as_str(), "bin")?;
+        require_same_stem_file(&self.csv_file, parsed.as_str(), "csv")?;
+        if &self.source_id != parsed.source() {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "manifest source_id {} does not match stem {}",
+                    self.source_id,
+                    parsed.source()
+                ),
+            });
+        }
+        if self.sample_bits != parsed.sample_bits() {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "manifest sample_bits {} do not match stem {}",
+                    self.sample_bits.get(),
+                    parsed.sample_bits().get()
+                ),
+            });
+        }
+        if self.interval_seconds != parsed.interval() {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "manifest interval {} does not match stem {}",
+                    self.interval_seconds.get(),
+                    parsed.interval().get()
+                ),
+            });
+        }
+        if self.fold != parsed.fold() {
+            return Err(RecordingError::Corrupt {
+                reason: "manifest fold does not match stem".into(),
+            });
+        }
+        Ok(parsed)
+    }
+}
+
+fn require_same_stem_file(name: &str, stem: &str, extension: &str) -> Result<(), RecordingError> {
+    let expected = format!("{stem}.{extension}");
+    if name != expected {
+        return Err(RecordingError::InvalidName {
+            reason: format!("manifest {extension} file must be {expected}, got {name}"),
+        });
+    }
+    Ok(())
 }
 
 fn format_offset(offset: UtcOffset) -> String {

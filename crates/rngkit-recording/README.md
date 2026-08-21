@@ -10,4 +10,9 @@ corruption. Files are never truncated, repaired, resumed, or overwritten
 automatically.
 
 Legacy access is read-only and limited to version 3 T-formatted names with
-source IDs `bitb`, `trng`, and `pseudo`.
+source IDs `bitb`, `trng`, and `pseudo`. BIN import streams fixed-size samples
+without retaining the whole payload. CSV one-counts greater than the filename
+sample size are rejected. Native manifests are validated so `stem`, `bin_file`,
+and `csv_file` cannot point outside the selected session directory. Existing
+BIN, CSV, and `manifest.json` entries are opened without following symbolic
+links or reparse points.

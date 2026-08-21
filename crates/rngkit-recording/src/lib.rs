@@ -12,6 +12,7 @@ mod fsutil;
 
 pub use consistency::{ConsistencyReport, ConsistencyWarning};
 pub use error::RecordingError;
+pub use fsutil::join_contained;
 pub use legacy_v3::open_legacy;
 pub use manifest::{Manifest, ManifestStatus, SCHEMA_VERSION};
 pub use naming::{SessionStem, now_local};

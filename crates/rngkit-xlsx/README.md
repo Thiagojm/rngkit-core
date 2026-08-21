@@ -8,4 +8,8 @@ cumulative signed-Z line chart with a zero line and dashed visual references at
 rejection, pass, or fail boundaries. No p-value is written.
 
 This crate consumes normalized readers and `rngkit-analysis`. It does not parse
-BIN or CSV itself.
+BIN or CSV itself. Native report paths are built from a validated session stem
+and must remain inside the session directory. Workbooks are written to a unique
+create-new temporary file in the destination directory and promoted only after
+a successful close; `ErrorIfExists` never replaces a destination that appears
+concurrently.

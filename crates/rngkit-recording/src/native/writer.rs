@@ -12,7 +12,7 @@ use rngkit_core::{
 use time::UtcOffset;
 
 use crate::error::RecordingError;
-use crate::fsutil::child_under_root;
+use crate::fsutil::join_contained;
 use crate::manifest::Manifest;
 use crate::naming::SessionStem;
 use crate::native::csv::{NATIVE_CSV_COLUMNS, NativeCsvRow};
@@ -28,6 +28,12 @@ pub enum FailPoint {
     AfterBinSync,
     /// Fail after CSV append, before CSV sync.
     AfterCsvAppend,
+    /// Fail while writing the completed manifest.
+    CompleteManifest,
+    /// Fail while writing the failed manifest.
+    FailManifest,
+    /// Fail both completed-manifest and failed-manifest writes.
+    CompleteAndFailManifest,
 }
 
 /// Owned, non-cloneable writer for one native session.
@@ -64,7 +70,7 @@ impl SessionWriter {
         if !root.exists() {
             fs::create_dir_all(root)?;
         }
-        let dir = child_under_root(root, stem.as_str())?;
+        let dir = join_contained(root, stem.as_str())?;
         if dir.exists() {
             return Err(RecordingError::AlreadyExists { path: dir });
         }
@@ -232,17 +238,41 @@ impl SessionWriter {
         Ok(record)
     }
 
-    /// Finalizes a clean stop.
+    /// Finalizes a clean stop and returns the session directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns a recording error when the completed manifest cannot be written.
+    /// Prefer [`Self::finalize_completed`] when the caller still needs this
+    /// writer for failed-manifest fallback.
     pub fn complete(mut self) -> Result<PathBuf, RecordingError> {
-        self.manifest
-            .complete(self.committed, self.overruns, UtcTimestamp::now());
-        self.manifest.write_to(&self.dir)?;
+        self.finalize_completed()?;
         Ok(self.dir)
     }
 
-    /// Best-effort failed finalization. Preserves the original diagnostic if
-    /// the manifest write also fails.
-    pub fn finalize_failed(mut self, kind: &str, diagnostic: &str) -> RecordingError {
+    /// Writes the completed manifest without consuming the writer.
+    ///
+    /// # Errors
+    ///
+    /// Returns a recording error when the completed manifest cannot be written.
+    pub fn finalize_completed(&mut self) -> Result<(), RecordingError> {
+        self.check_fail_any(&[
+            FailPoint::CompleteManifest,
+            FailPoint::CompleteAndFailManifest,
+        ])?;
+        self.manifest
+            .complete(self.committed, self.overruns, UtcTimestamp::now());
+        self.manifest.write_to(&self.dir)
+    }
+
+    /// Best-effort failed-manifest write. The original terminal error remains
+    /// the caller's responsibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns a recording error when the failed manifest cannot be written.
+    pub fn finalize_failed(&mut self, kind: &str, diagnostic: &str) -> Result<(), RecordingError> {
+        self.check_fail_any(&[FailPoint::FailManifest, FailPoint::CompleteAndFailManifest])?;
         self.manifest.fail(
             self.committed,
             self.overruns,
@@ -250,26 +280,26 @@ impl SessionWriter {
             kind,
             diagnostic,
         );
-        match self.manifest.write_to(&self.dir) {
-            Ok(()) => RecordingError::Commit {
-                stage: "finalize",
-                reason: diagnostic.to_owned(),
-            },
-            Err(manifest_err) => RecordingError::Commit {
-                stage: "finalize",
-                reason: format!("{diagnostic}; manifest update failed: {manifest_err}"),
-            },
-        }
+        self.manifest.write_to(&self.dir)
+    }
+
+    /// Session directory after the caller has finished terminal finalization.
+    #[must_use]
+    pub fn into_directory(self) -> PathBuf {
+        self.dir
     }
 
     fn check_fail(&self, point: FailPoint) -> Result<(), RecordingError> {
-        if self.fail == Some(point) {
-            Err(RecordingError::Commit {
+        self.check_fail_any(&[point])
+    }
+
+    fn check_fail_any(&self, points: &[FailPoint]) -> Result<(), RecordingError> {
+        match self.fail {
+            Some(point) if points.contains(&point) => Err(RecordingError::Commit {
                 stage: fail_stage(point),
                 reason: "injected failure".into(),
-            })
-        } else {
-            Ok(())
+            }),
+            _ => Ok(()),
         }
     }
 }
@@ -280,5 +310,7 @@ fn fail_stage(point: FailPoint) -> &'static str {
         FailPoint::AfterBinAppend => "bin-append",
         FailPoint::AfterBinSync => "bin-sync",
         FailPoint::AfterCsvAppend => "csv-append",
+        FailPoint::CompleteManifest | FailPoint::CompleteAndFailManifest => "complete-manifest",
+        FailPoint::FailManifest => "fail-manifest",
     }
 }

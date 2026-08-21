@@ -1,12 +1,15 @@
 //! Workbook generation.
 
-use std::fs;
-use std::io;
+use std::cell::{Cell, RefCell};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rngkit_analysis::{Snapshot, analyze_records};
 use rngkit_core::TimestampProvenance;
-use rngkit_recording::NormalizedSession;
+use rngkit_recording::{NormalizedSession, SessionStem, join_contained};
 use rust_xlsxwriter::{
     Chart, ChartLine, ChartLineDashType, ChartType, Format, Workbook, Worksheet,
     XlsxError as BookError,
@@ -29,9 +32,17 @@ pub enum Overwrite {
 }
 
 /// Output path for a native session: `<dir>/<stem>.xlsx`.
-#[must_use]
-pub fn native_report_path(session_dir: &Path, stem: &str) -> PathBuf {
-    session_dir.join(format!("{stem}.xlsx"))
+///
+/// `stem` must already be a validated [`SessionStem`]. The resolved path is
+/// required to stay inside `session_dir`.
+///
+/// # Errors
+///
+/// Returns [`XlsxError::Recording`] when the filename would escape
+/// `session_dir` or `session_dir` cannot be canonicalized.
+pub fn native_report_path(session_dir: &Path, stem: &SessionStem) -> Result<PathBuf, XlsxError> {
+    let name = format!("{}.xlsx", stem.as_str());
+    Ok(join_contained(session_dir, &name)?)
 }
 
 /// Output path for a legacy input: sibling of the selected file.
@@ -49,10 +60,17 @@ pub fn legacy_report_path(selected: &Path) -> PathBuf {
 
 /// Writes a two-sheet analysis workbook from a normalized session.
 ///
+/// The workbook is written to a uniquely owned temporary file created with
+/// create-new semantics in the destination directory, then promoted. A
+/// pre-existing temporary name is never followed, truncated, or reused.
+/// [`Overwrite::ErrorIfExists`] refuses to replace a destination that exists
+/// at promotion time, including one created concurrently.
+///
 /// # Errors
 ///
 /// Fails on row-limit, existing output without overwrite, analysis errors, and
-/// write failures. A failure leaves no partial final workbook.
+/// write failures. A failure leaves no partial final workbook and does not
+/// modify source session files.
 pub fn write_report(
     session: &NormalizedSession,
     dest: &Path,
@@ -74,16 +92,47 @@ pub fn write_report(
         session.meta().sample_bits,
         session.records().iter().cloned(),
     )?;
-    let tmp = sibling_temp(dest);
-    let result = write_workbook(session, &snapshots, &tmp);
-    match result {
-        Ok(()) => {
-            replace_file(&tmp, dest)?;
-            Ok(dest.to_path_buf())
+    let parent = dest
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let (tmp_path, mut file) = create_owned_temp(parent)?;
+    let write_result = if FAIL_WORKBOOK.with(|flag| flag.get()) {
+        Err(XlsxError::Workbook("injected workbook failure".into()))
+    } else {
+        write_workbook(session, &snapshots, &mut file).and_then(|()| {
+            file.flush()?;
+            file.sync_all()?;
+            Ok(())
+        })
+    };
+    drop(file);
+    if let Err(err) = write_result {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(err);
+    }
+    BEFORE_PROMOTE.with(|hook| {
+        if let Some(hook) = hook.borrow().as_ref() {
+            hook(&tmp_path);
         }
+    });
+    let promoted = match overwrite {
+        Overwrite::ErrorIfExists => promote_noclobber(&tmp_path, dest),
+        Overwrite::Replace => replace_file(&tmp_path, dest),
+    };
+    match promoted {
+        Ok(()) => Ok(dest.to_path_buf()),
         Err(err) => {
-            let _ = fs::remove_file(&tmp);
-            Err(err)
+            let _ = fs::remove_file(&tmp_path);
+            if overwrite == Overwrite::ErrorIfExists
+                && (err.kind() == io::ErrorKind::AlreadyExists || dest.exists())
+            {
+                Err(XlsxError::AlreadyExists {
+                    path: dest.to_path_buf(),
+                })
+            } else {
+                Err(err.into())
+            }
         }
     }
 }
@@ -91,7 +140,7 @@ pub fn write_report(
 fn write_workbook(
     session: &NormalizedSession,
     snapshots: &[Snapshot],
-    path: &Path,
+    writer: &mut File,
 ) -> Result<(), XlsxError> {
     let mut workbook = Workbook::new();
     write_summary(workbook.add_worksheet(), session, snapshots)?;
@@ -107,7 +156,7 @@ fn write_workbook(
             samples.insert_chart(0, 12, &chart).map_err(map_book)?;
         }
     }
-    workbook.save(path).map_err(map_book)?;
+    workbook.save_to_writer(writer).map_err(map_book)?;
     Ok(())
 }
 
@@ -296,14 +345,114 @@ fn map_book(err: BookError) -> XlsxError {
     XlsxError::Workbook(err.to_string())
 }
 
-fn sibling_temp(dest: &Path) -> PathBuf {
-    let name = dest
-        .file_name()
-        .map(|n| format!(".{}.tmp", n.to_string_lossy()))
-        .unwrap_or_else(|| ".report.tmp".into());
-    match dest.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent.join(name),
-        _ => PathBuf::from(name),
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+type PromoteHook = Box<dyn Fn(&Path)>;
+
+thread_local! {
+    static FAIL_WORKBOOK: Cell<bool> = const { Cell::new(false) };
+    static BEFORE_PROMOTE: RefCell<Option<PromoteHook>> = RefCell::new(None);
+}
+
+/// Runs `body` so workbook generation fails after the owned temporary file is
+/// created. The temporary artifact is removed and `dest` is left untouched.
+#[doc(hidden)]
+pub fn with_workbook_write_failure<R>(body: impl FnOnce() -> R) -> R {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            FAIL_WORKBOOK.with(|flag| flag.set(false));
+        }
+    }
+    FAIL_WORKBOOK.with(|flag| flag.set(true));
+    let _reset = Reset;
+    body()
+}
+
+/// Runs `body` and invokes `hook` with the owned temporary path after the
+/// workbook is durable and before promotion.
+#[doc(hidden)]
+pub fn with_report_promote_hook<R>(hook: impl Fn(&Path) + 'static, body: impl FnOnce() -> R) -> R {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            BEFORE_PROMOTE.with(|cell| *cell.borrow_mut() = None);
+        }
+    }
+    BEFORE_PROMOTE.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    let _reset = Reset;
+    body()
+}
+
+fn create_owned_temp(dir: &Path) -> io::Result<(PathBuf, File)> {
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    for _ in 0..1024u32 {
+        let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let name = format!(".rngkit-xlsx-{pid}-{nanos}-{n}.tmp");
+        let path = dir.join(name);
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not create a unique xlsx temporary file",
+    ))
+}
+
+fn promote_noclobber(tmp: &Path, dest: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        fs::hard_link(tmp, dest)?;
+        fs::remove_file(tmp)?;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        promote_noclobber_windows(tmp, dest)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        if dest.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "xlsx destination exists",
+            ));
+        }
+        fs::rename(tmp, dest)
+    }
+}
+
+#[cfg(windows)]
+fn promote_noclobber_windows(tmp: &Path, dest: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    fn wide(path: &Path) -> Vec<u16> {
+        path.as_os_str().encode_wide().chain(Some(0)).collect()
+    }
+
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+
+    unsafe extern "system" {
+        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+    }
+
+    let tmp_w = wide(tmp);
+    let dest_w = wide(dest);
+    // SAFETY: both paths are NUL-terminated UTF-16; MoveFileExW does not
+    // retain the pointers. Flags omit MOVEFILE_REPLACE_EXISTING so a
+    // destination created concurrently is left in place.
+    let ok = unsafe { MoveFileExW(tmp_w.as_ptr(), dest_w.as_ptr(), MOVEFILE_WRITE_THROUGH) };
+    if ok == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }
 

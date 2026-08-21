@@ -17,8 +17,8 @@ pub mod csv;
 ///
 /// # Errors
 ///
-/// Rejects version 2 names, mismatched sibling counts/popcounts, and partial
-/// trailing BIN samples.
+/// Rejects version 2 names, mismatched sibling counts/popcounts, partial
+/// trailing BIN samples, and one-counts greater than the declared sample size.
 pub fn open_legacy(path: impl AsRef<Path>) -> Result<NormalizedSession, RecordingError> {
     let path = path.as_ref();
     let stem_str = file_stem(path)?;
@@ -39,54 +39,20 @@ pub fn open_legacy(path: impl AsRef<Path>) -> Result<NormalizedSession, Recordin
 
     let (records, provenance) = match (csv_exists, bin_exists) {
         (true, false) => {
-            let rows = csv::read_legacy_csv(&csv_path)?;
+            let rows = csv::read_legacy_csv(&csv_path, stem.sample_bits())?;
             (csv::records_from_csv(&rows)?, TimestampProvenance::Recorded)
         }
         (false, true) => {
-            let samples = bin::read_legacy_bin(&bin_path, stem.sample_bits())?;
+            let mut reader = bin::LegacyBinReader::open(&bin_path, stem.sample_bits())?;
             (
-                bin::records_from_bin(&stem, &samples)?,
+                bin::records_from_bin(&stem, &mut reader)?,
                 TimestampProvenance::Estimated,
             )
         }
-        (true, true) => {
-            let rows = csv::read_legacy_csv(&csv_path)?;
-            let samples = bin::read_legacy_bin(&bin_path, stem.sample_bits())?;
-            if rows.len() != samples.len() {
-                return Err(RecordingError::Corrupt {
-                    reason: format!(
-                        "legacy csv has {} rows but bin has {} samples",
-                        rows.len(),
-                        samples.len()
-                    ),
-                });
-            }
-            for (row, sample) in rows.iter().zip(samples.iter()) {
-                if row.ones != sample.ones {
-                    return Err(RecordingError::Corrupt {
-                        reason: format!(
-                            "legacy csv ones {} do not match bin popcount {} at {}",
-                            row.ones,
-                            sample.ones,
-                            sample.index.get()
-                        ),
-                    });
-                }
-            }
-            let mut records = csv::records_from_csv(&rows)?;
-            let length = rngkit_core::ByteLength::from_sample_bits(stem.sample_bits())?;
-            for (i, record) in records.iter_mut().enumerate() {
-                record.byte_offset = Some(rngkit_core::ByteOffset::new(
-                    (i as u64)
-                        .checked_mul(u64::from(length.get()))
-                        .ok_or_else(|| RecordingError::Corrupt {
-                            reason: "byte offset overflow".into(),
-                        })?,
-                ));
-                record.byte_length = Some(length);
-            }
-            (records, TimestampProvenance::Recorded)
-        }
+        (true, true) => (
+            paired_records(&csv_path, &bin_path, &stem)?,
+            TimestampProvenance::Recorded,
+        ),
         (false, false) => {
             return Err(RecordingError::InvalidName {
                 reason: "legacy path has neither csv nor bin sibling".into(),
@@ -110,6 +76,56 @@ pub fn open_legacy(path: impl AsRef<Path>) -> Result<NormalizedSession, Recordin
         local_utc_offset: None,
     };
     Ok(NormalizedSession::from_parts(meta, records))
+}
+
+fn paired_records(
+    csv_path: &Path,
+    bin_path: &Path,
+    stem: &SessionStem,
+) -> Result<Vec<rngkit_core::SampleRecord>, RecordingError> {
+    let rows = csv::read_legacy_csv(csv_path, stem.sample_bits())?;
+    let mut reader = bin::LegacyBinReader::open(bin_path, stem.sample_bits())?;
+    let row_count = u64::try_from(rows.len()).map_err(|_| RecordingError::Corrupt {
+        reason: "legacy csv row count overflow".into(),
+    })?;
+    if row_count != reader.sample_count() {
+        return Err(RecordingError::Corrupt {
+            reason: format!(
+                "legacy csv has {} rows but bin has {} samples",
+                rows.len(),
+                reader.sample_count()
+            ),
+        });
+    }
+    let mut records = Vec::new();
+    for row in &rows {
+        let Some(meta) = reader.read_next()? else {
+            return Err(RecordingError::Corrupt {
+                reason: "legacy bin ended before csv rows".into(),
+            });
+        };
+        if row.ones != meta.ones {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "legacy csv ones {} do not match bin popcount {} at {}",
+                    row.ones,
+                    meta.ones,
+                    meta.index.get()
+                ),
+            });
+        }
+        records.push(rngkit_core::SampleRecord {
+            index: meta.index,
+            timestamp: row.timestamp,
+            provenance: TimestampProvenance::Recorded,
+            elapsed: None,
+            acquisition: None,
+            ones: row.ones,
+            byte_offset: Some(meta.byte_offset),
+            byte_length: Some(meta.byte_length),
+        });
+    }
+    Ok(records)
 }
 
 fn legacy_label(id: &str) -> String {

@@ -7,7 +7,8 @@
 3. `TODO.md`
 4. `README.md` and the crate you are changing
 
-Approved design/plan: `docs/specs/2026-08-21-rngkit-core-design.md`,
+Executed 2026-08-21 design/plan (durable rules live in DECISIONS):
+`docs/specs/2026-08-21-rngkit-core-design.md`,
 `docs/plans/2026-08-21-rngkit-core-plan.md`.
 
 ## Verified commands (Windows host, 2026-08-21)
@@ -32,11 +33,13 @@ cargo check -p rngkit-sources --no-default-features --features pseudo
 git diff --check
 ```
 
-Physical tests (not run in the implementation session):
+Physical tests (Windows host, 2026-08-21):
 
 ```text
 cargo test -p rngkit-sources --test hardware -- --ignored --test-threads=1 --nocapture
 ```
+
+Do not infer Linux or other-device support from those results.
 
 ## Conventions
 

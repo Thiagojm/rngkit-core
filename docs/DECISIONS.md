@@ -25,9 +25,22 @@
   - Cancel during wait is prompt; cancel during a successful read commits that
     sample then stops
   - Native directory bundle with v3 stem; CSV is the commit marker
+  - Loaded manifests parse the stem and require exact same-stem `bin`/`csv`
+    basenames; native artifacts including `manifest.json` are opened without
+    following links or reparse points, and native XLSX paths stay in the
+    session dir
   - Legacy import is read-only v3 (`bitb`/`trng`/`pseudo`); reject v2
+  - Legacy BIN is streaming and bounded to one sample buffer; CSV one-counts
+    greater than `_s<bits>` fail at import
+  - Event-sink failures are terminal and keep the primary error. Start, commit,
+    overrun, completed-manifest, and `SessionStopped` failures best-effort
+    finalize a failed manifest; secondary finalization or `SessionFailed`
+    delivery must not replace the primary error
+  - XLSX uses a unique create-new temporary file and `ErrorIfExists` promotes
+    without replacing a concurrent destination
   - Z is descriptive; no p-values; chart `±1.96` lines are visual references
-- Why: match approved design after statistical and reference-line amendments
+- Why: match approved design after statistical, reference-line, and review
+  safety amendments
 - Impact: Tauri, TrueRNGpro, v2 import, multi-source, reconnect, and sequential
   inference stay out of this workspace
 

@@ -44,6 +44,14 @@ pub enum RecordingError {
         /// Diagnostic.
         reason: String,
     },
+    /// A legacy CSV one-count exceeds the sample bit length from the filename.
+    #[error("ones count {ones} exceeds sample bits {sample_bits}")]
+    OnesExceedSampleBits {
+        /// Observed one-count.
+        ones: u64,
+        /// Declared sample size in bits.
+        sample_bits: u32,
+    },
     /// A domain value failed validation.
     #[error(transparent)]
     Core(#[from] rngkit_core::CoreError),

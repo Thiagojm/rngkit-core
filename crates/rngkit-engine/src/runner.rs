@@ -1,10 +1,11 @@
 //! Blocking single-source collection loop.
 
+use std::cell::Cell;
 use std::path::PathBuf;
 
 use rngkit_analysis::Accumulator;
 use rngkit_core::{EntropySource, IntervalSeconds, SampleBits, SourceDescriptor, UtcTimestamp};
-use rngkit_recording::{SessionStem, SessionWriter, now_local};
+use rngkit_recording::{FailPoint, SessionStem, SessionWriter, now_local};
 use time::UtcOffset;
 
 use crate::cancellation::{CancelToken, Cancelled, Clock, StdClock};
@@ -117,7 +118,14 @@ where
         started_at,
         offset,
     )?;
-    sink.emit(EngineEvent::SessionStarted { stem })?;
+    TEST_WRITER_FAIL.with(|point| {
+        if let Some(point) = point.get() {
+            writer.set_fail_point(Some(point));
+        }
+    });
+    if let Err(err) = sink.emit(EngineEvent::SessionStarted { stem }) {
+        return fail(writer, sink, err);
+    }
 
     let mut analysis = Accumulator::new(config.sample_bits);
     let interval = config.interval.duration();
@@ -172,35 +180,62 @@ where
     }
 }
 
-fn stop<K: EventSink>(writer: SessionWriter, sink: &mut K) -> Result<SessionOutcome, EngineError> {
+fn stop<K: EventSink>(
+    mut writer: SessionWriter,
+    sink: &mut K,
+) -> Result<SessionOutcome, EngineError> {
     let committed = writer.committed();
     let overruns = writer.overruns();
-    let directory = writer.complete()?;
-    sink.emit(EngineEvent::SessionStopped {
+    if let Err(err) = writer.finalize_completed() {
+        return fail(writer, sink, EngineError::Recording(err));
+    }
+    match sink.emit(EngineEvent::SessionStopped {
         committed,
         overruns,
-    })?;
-    Ok(SessionOutcome {
-        directory,
-        committed,
-        overruns,
-    })
+    }) {
+        Ok(()) => Ok(SessionOutcome {
+            directory: writer.into_directory(),
+            committed,
+            overruns,
+        }),
+        Err(err) => fail(writer, sink, err),
+    }
 }
 
 fn fail<K: EventSink>(
-    writer: SessionWriter,
+    mut writer: SessionWriter,
     sink: &mut K,
     err: EngineError,
 ) -> Result<SessionOutcome, EngineError> {
     let committed = writer.committed();
     let kind = err.kind_label();
     let diagnostic = err.to_string();
-    let recording_err = writer.finalize_failed(kind, &diagnostic);
+    let _ = writer.finalize_failed(kind, &diagnostic);
     let _ = sink.emit(EngineEvent::SessionFailed {
         committed,
         kind,
-        diagnostic: diagnostic.clone(),
+        diagnostic,
     });
-    let _ = recording_err;
     Err(err)
+}
+
+thread_local! {
+    static TEST_WRITER_FAIL: Cell<Option<FailPoint>> = const { Cell::new(None) };
+}
+
+/// Installs a writer fail point for the duration of `body`.
+///
+/// Used by tests to inject completed-manifest and failed-manifest write
+/// failures after [`SessionWriter::create`].
+#[doc(hidden)]
+pub fn with_writer_fail_point<R>(point: FailPoint, body: impl FnOnce() -> R) -> R {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_WRITER_FAIL.with(|cell| cell.set(None));
+        }
+    }
+    TEST_WRITER_FAIL.with(|cell| cell.set(Some(point)));
+    let _reset = Reset;
+    body()
 }
