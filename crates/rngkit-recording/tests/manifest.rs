@@ -271,58 +271,63 @@ fn try_file_symlink(target: &std::path::Path, link: &std::path::Path) -> bool {
     }
 }
 
+fn isolated_session(root: &std::path::Path, name: &str, manifest: &Manifest) -> std::path::PathBuf {
+    let session = root.join(name);
+    std::fs::create_dir(&session).unwrap();
+    write_session_bundle(&session, manifest);
+    session
+}
+
 #[test]
 fn exact_name_artifact_symlink_cannot_escape_session_dir() {
     let root = tempdir().unwrap();
-    let session = root.path().join("session");
-    std::fs::create_dir(&session).unwrap();
     let outside = root.path().join("outside.bin");
     let secret = b"do-not-read-or-replace";
     std::fs::write(&outside, secret).unwrap();
 
     let desc = SourceDescriptor::new(SourceId::trng(), "TrueRNG v1/v2/v3", None, None).unwrap();
     let manifest = Manifest::recording(&stem(), &desc, UtcTimestamp::now(), UtcOffset::UTC);
-    write_session_bundle(&session, &manifest);
-
     let stem_name = stem().to_string();
-    let bin_link = session.join(format!("{stem_name}.bin"));
+
+    let bin_session = isolated_session(root.path(), "session-bin", &manifest);
+    let bin_link = bin_session.join(format!("{stem_name}.bin"));
     std::fs::remove_file(&bin_link).unwrap();
     if !try_file_symlink(&outside, &bin_link) {
-        write_session_bundle(&session, &manifest);
-        assert!(NativeSession::open(&session).is_ok());
+        write_session_bundle(&bin_session, &manifest);
+        assert!(NativeSession::open(&bin_session).is_ok());
         assert_eq!(std::fs::read(&outside).unwrap(), secret);
         return;
     }
 
-    let err = NativeSession::open(&session).unwrap_err();
+    let err = NativeSession::open(&bin_session).unwrap_err();
     assert!(
         matches!(err, RecordingError::PathEscapesRoot { .. }),
         "expected contained-path error, got {err}"
     );
     assert_eq!(std::fs::read(&outside).unwrap(), secret);
 
-    write_session_bundle(&session, &manifest);
-    let csv_link = session.join(format!("{stem_name}.csv"));
+    let csv_session = isolated_session(root.path(), "session-csv", &manifest);
+    let csv_link = csv_session.join(format!("{stem_name}.csv"));
     std::fs::remove_file(&csv_link).unwrap();
     assert!(
         try_file_symlink(&outside, &csv_link),
         "csv symlink should succeed after bin symlink succeeded"
     );
-    let err = NativeSession::open(&session).unwrap_err();
+    let err = NativeSession::open(&csv_session).unwrap_err();
     assert!(
         matches!(err, RecordingError::PathEscapesRoot { .. }),
         "expected csv link to be rejected, got {err}"
     );
     assert_eq!(std::fs::read(&outside).unwrap(), secret);
 
-    write_session_bundle(&session, &manifest);
-    let manifest_link = session.join("manifest.json");
+    let manifest_session = isolated_session(root.path(), "session-manifest", &manifest);
+    let manifest_link = manifest_session.join("manifest.json");
     std::fs::remove_file(&manifest_link).unwrap();
     assert!(
         try_file_symlink(&outside, &manifest_link),
         "manifest symlink should succeed after bin symlink succeeded"
     );
-    let err = Manifest::read_from(&session).unwrap_err();
+    let err = Manifest::read_from(&manifest_session).unwrap_err();
     assert!(
         matches!(
             err,
@@ -331,5 +336,5 @@ fn exact_name_artifact_symlink_cannot_escape_session_dir() {
         "expected manifest link to be rejected, got {err}"
     );
     assert_eq!(std::fs::read(&outside).unwrap(), secret);
-    assert!(NativeSession::open(&session).is_err());
+    assert!(NativeSession::open(&manifest_session).is_err());
 }
