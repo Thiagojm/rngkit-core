@@ -1,0 +1,20 @@
+[package]
+name = "rngkit-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Validated domain contracts, entropy source trait, and byte popcount for RngKit"
+readme = "README.md"
+keywords = ["rng", "entropy", "statistics"]
+categories = ["science"]
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+time.workspace = true
+
+[lints]
+workspace = true

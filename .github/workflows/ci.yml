@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  test:
+    name: test ${{ matrix.os }} ${{ matrix.rust }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rust: [stable, "1.85.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: clippy
+      - name: Check
+        run: cargo check --workspace --all-targets --all-features
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features
+      - name: Clippy
+        if: matrix.rust == 'stable'
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Doctests
+        run: cargo test --workspace --doc --all-features
+      - name: Feature subsets
+        shell: bash
+        run: |
+          cargo check -p rngkit-sources --no-default-features --features bitb
+          cargo check -p rngkit-sources --no-default-features --features trng3
+          cargo check -p rngkit-sources --no-default-features --features rdseed
+          cargo check -p rngkit-sources --no-default-features --features pseudo

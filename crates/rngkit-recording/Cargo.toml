@@ -1,0 +1,26 @@
+[package]
+name = "rngkit-recording"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Native JSON/BIN/CSV session bundles and read-only RngKitPSG v3 import"
+readme = "README.md"
+keywords = ["rng", "session", "csv"]
+categories = ["filesystem"]
+
+[dependencies]
+rngkit-core.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+csv.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

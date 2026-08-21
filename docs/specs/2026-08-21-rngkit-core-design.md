@@ -1,6 +1,6 @@
 # RngKit Core Workspace Design
 
-**Status:** Draft for user review  
+**Status:** Approved
 **Date:** 2026-08-21  
 **Workspace root:** `D:\Projetos\rustie\libs\rngkit-core`
 

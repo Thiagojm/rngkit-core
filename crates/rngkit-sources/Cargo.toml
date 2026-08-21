@@ -1,0 +1,30 @@
+[package]
+name = "rngkit-sources"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "EntropySource adapters for BitBabbler, TrueRNG3, Intel RDSEED, and PseudoRNG"
+readme = "README.md"
+keywords = ["rng", "entropy", "hardware"]
+categories = ["hardware-support"]
+
+[features]
+default = ["bitb", "trng3", "rdseed", "pseudo"]
+bitb = ["dep:bitb-rs"]
+trng3 = ["dep:trng3-rs"]
+rdseed = ["dep:intel_seed"]
+pseudo = ["dep:pseudo_rng"]
+
+[dependencies]
+rngkit-core.workspace = true
+thiserror.workspace = true
+bitb-rs = { workspace = true, optional = true }
+trng3-rs = { workspace = true, optional = true }
+intel_seed = { workspace = true, optional = true }
+pseudo_rng = { workspace = true, optional = true }
+
+[lints]
+workspace = true
