@@ -19,15 +19,17 @@
 - Unified discovery CI passed on Windows and Ubuntu, stable and Rust 1.85, for
   commit `dce82be`:
   https://github.com/Thiagojm/rngkit-core/actions/runs/32548183132
+- Derived concatenation contracts and `inspect_legacy_csvs` (Checkpoint 1),
+  validated on stable and Rust 1.85
 
 ## In progress
 
-- None in this workspace. Next product phase is the Tauri application, in a
-  separate project.
+- None.
 
 ## Next steps
 
-- Start the Tauri app only after this library contract is accepted as the base
+- Checkpoint 2: derived bundle creation, `open_concatenation()`, and XLSX
+- After a reachable library revision, start the separate Tauri app
 
 ## Backlog
 

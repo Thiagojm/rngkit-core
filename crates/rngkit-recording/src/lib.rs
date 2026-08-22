@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+pub mod concatenation;
 pub mod consistency;
 pub mod error;
 pub mod legacy_v3;
@@ -10,8 +11,13 @@ pub mod normalized;
 
 mod fsutil;
 
+pub use concatenation::{
+    CONCATENATION_KIND, CONCATENATION_SCHEMA_VERSION, ConcatenationInputEntry,
+    ConcatenationManifest, ConcatenationPreview, ConcatenationStem, ContentSha256,
+    inspect_legacy_csvs,
+};
 pub use consistency::{ConsistencyReport, ConsistencyWarning};
-pub use error::RecordingError;
+pub use error::{ConcatenationCompatibilityField, RecordingError};
 pub use fsutil::join_contained;
 pub use legacy_v3::open_legacy;
 pub use manifest::{Manifest, ManifestStatus, SCHEMA_VERSION};

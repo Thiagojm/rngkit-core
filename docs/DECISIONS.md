@@ -74,6 +74,30 @@
   after the snapshot. Remote CI passed on Windows and Ubuntu with stable and
   Rust 1.85 for commit `dce82be`
 
+### Derived legacy CSV concatenation (2026-08-22)
+
+- Status: accepted for inspection; bundle writing is the next library step
+- Contract:
+  - Derived names use `YYYYMMDDTHHMMSS_concat_<source>_s<bits>_i<seconds>[_f<fold>]`
+    and are independent of `SessionStem`
+  - Manifest schema version 1, kind `legacy_csv_concatenation`; input entries
+    store basename, SHA-256, row count, first/last timestamp, and output range
+  - `inspect_legacy_csvs(&[PathBuf])` streams files, hashes bytes, and returns
+    a preview with no absolute-path serialization
+  - Inputs must be distinct nonempty readable RngKitPSG v3 CSVs (`bitb` /
+    `trng` / `pseudo`) with matching source, bits, interval, and fold
+  - Timestamps must be nondecreasing within a file; equal values inside one
+    file are accepted; equal or overlapping boundaries between files are not
+  - Native CSV, v2, empty, duplicate canonical, mixed, and malformed inputs
+    fail with explicit `RecordingError` variants
+  - Manifest parsing revalidates every input's nonzero row count, timestamp
+    order, and inclusive output span after deserialization
+  - Preview is advisory; creation must reopen and revalidate inputs
+- Why: the approved Tauri Combine workflow needs reusable provenance-bearing
+  concatenation without copying the legacy sort-and-append behavior
+- Impact: `rngkit-recording` gains SHA-256; bundle write/read and derived XLSX
+  remain a later checkpoint
+
 ### MSRV-compatible Excel stack (2026-08-21)
 
 - Status: accepted

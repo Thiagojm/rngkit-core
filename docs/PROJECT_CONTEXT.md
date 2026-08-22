@@ -17,10 +17,13 @@ descriptive cumulative statistics, and can export an Excel report.
 5. Read native bundles or RngKitPSG v3 files through normalized records.
 6. Analyze incrementally or in batch with the same accumulator.
 7. Export `<stem>.xlsx` with Summary, Samples, and a descriptive Z chart.
+8. Inspect compatible legacy v3 CSVs with `inspect_legacy_csvs` for a derived
+   concatenation preview (basenames and SHA-256, no absolute paths).
 
 ## Domain terms
 
 - **Stem:** `YYYYMMDDTHHMMSS_<source>_s<bits>_i<seconds>[_f<fold>]`
+- **Concat stem:** `YYYYMMDDTHHMMSS_concat_<source>_s<bits>_i<seconds>[_f<fold>]`
 - **Commit marker:** the native CSV row; BIN-first, CSV-last
 - **Descriptive Z:** `(2*C - N) / sqrt(N)`; not a significance decision
 - **Reference ±1.96:** visual chart lines only
@@ -41,3 +44,8 @@ descriptive cumulative statistics, and can export an Excel report.
 - Event-sink and completed-manifest failures finalize the session as failed and keep the primary error
 - XLSX uses a unique create-new temp; `ErrorIfExists` must not replace a concurrent destination
 - Legacy BIN import streams one sample at a time; CSV one-counts cannot exceed sample bits
+- Derived concatenation inspects distinct nonempty legacy v3 CSVs with matching
+  source/bits/interval/fold; equal timestamps are allowed inside one file and
+  rejected as overlap between files; previews never persist absolute input paths
+- Derived manifest parsing revalidates nonzero input rows, timestamp order,
+  exact inclusive output spans, and contiguous ranges instead of trusting JSON
