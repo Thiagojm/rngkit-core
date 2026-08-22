@@ -122,7 +122,7 @@ const fn unix_o_nofollow() -> i32 {
     // O_NOFOLLOW: Linux/Android 0400000, Darwin/BSD 0x0100.
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
-        0o200000
+        0o400000
     }
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
