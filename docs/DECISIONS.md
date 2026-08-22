@@ -71,8 +71,8 @@
 - Why: keep adapter discovery policy in the library so Tauri and later
   consumers do not duplicate it
 - Impact: discovery does not reserve a device; `open()` remains authoritative
-  after the snapshot. Remote CI for this additive API is unverified until a
-  job runs against the discovery commit
+  after the snapshot. Remote CI passed on Windows and Ubuntu with stable and
+  Rust 1.85 for commit `dce82be`
 
 ### MSRV-compatible Excel stack (2026-08-21)
 

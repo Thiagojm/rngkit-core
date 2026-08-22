@@ -16,6 +16,9 @@
 - Base library CI passed on Windows and Ubuntu, stable and Rust 1.85, for
   commit `371f287`:
   https://github.com/Thiagojm/rngkit-core/actions/runs/32539081921
+- Unified discovery CI passed on Windows and Ubuntu, stable and Rust 1.85, for
+  commit `dce82be`:
+  https://github.com/Thiagojm/rngkit-core/actions/runs/32548183132
 
 ## In progress
 
@@ -24,8 +27,6 @@
 
 ## Next steps
 
-- Treat discovery-change CI as unverified until a remote Windows/Ubuntu
-  stable and MSRV job actually passes against this diff
 - Start the Tauri app only after this library contract is accepted as the base
 
 ## Backlog
