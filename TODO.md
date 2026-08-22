@@ -7,10 +7,15 @@
   one-count bounds, streaming legacy BIN, manifest stem/path checks,
   no-follow native artifact opens, race-safe XLSX temps/`ErrorIfExists`,
   and failed-session finalization for sink and completed-manifest errors
-- Windows deterministic stable and MSRV 1.85 validation: 77 regular tests,
-  7 doctests
-- Physical BitBabbler, TrueRNG3, and RDSEED tests passed serially on this
-  Windows host
+- Unified `rngkit_sources::discover()` snapshot API from the approved
+  2026-08-21 source-discovery design/plan
+- Windows deterministic stable and MSRV 1.85 validation after discovery:
+  92 regular tests, 7 doctests
+- Physical BitBabbler, TrueRNG3, RDSEED, and `physical_discover` tests
+  passed serially on this Windows host
+- Base library CI passed on Windows and Ubuntu, stable and Rust 1.85, for
+  commit `371f287`:
+  https://github.com/Thiagojm/rngkit-core/actions/runs/32539081921
 
 ## In progress
 
@@ -19,7 +24,8 @@
 
 ## Next steps
 
-- Treat Linux CI as unverified until a remote job actually passes
+- Treat discovery-change CI as unverified until a remote Windows/Ubuntu
+  stable and MSRV job actually passes against this diff
 - Start the Tauri app only after this library contract is accepted as the base
 
 ## Backlog

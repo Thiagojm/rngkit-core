@@ -9,12 +9,14 @@ descriptive cumulative statistics, and can export an Excel report.
 
 ## Main flows
 
-1. Open one configured source through `rngkit-sources` / `EntropySource`.
-2. Run `rngkit-engine` until cancellation or a terminal error.
-3. Persist a native directory: `<stem>.bin`, `<stem>.csv`, `manifest.json`.
-4. Read native bundles or RngKitPSG v3 files through normalized records.
-5. Analyze incrementally or in batch with the same accumulator.
-6. Export `<stem>.xlsx` with Summary, Samples, and a descriptive Z chart.
+1. Snapshot selectable sources with `rngkit_sources::discover()`; map one
+   candidate to an explicit `SourceConfig`.
+2. Open that source through `rngkit-sources` / `EntropySource`.
+3. Run `rngkit-engine` until cancellation or a terminal error.
+4. Persist a native directory: `<stem>.bin`, `<stem>.csv`, `manifest.json`.
+5. Read native bundles or RngKitPSG v3 files through normalized records.
+6. Analyze incrementally or in batch with the same accumulator.
+7. Export `<stem>.xlsx` with Summary, Samples, and a descriptive Z chart.
 
 ## Domain terms
 
@@ -29,6 +31,8 @@ descriptive cumulative statistics, and can export an Excel report.
 - No Tauri, Tokio, GUI, or other async runtime
 - Source crates stay external, revision-pinned Git dependencies
 - Default tests never enumerate or open hardware
+- `discover()` is a best-effort snapshot: present candidates plus per-family
+  issues; it does not watch hot-plug, cache, or reserve a device
 - Do not persist serials, OS device paths, seeds, or PRNG state
 - Native manifests and report paths must stay inside the selected session directory
 - Native BIN, CSV, and `manifest.json` opens must not follow links out of the session

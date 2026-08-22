@@ -9,7 +9,7 @@ layer before a future Tauri application.
 | Package | Role |
 | --- | --- |
 | `rngkit-core` | Domain contracts, `EntropySource`, popcount |
-| `rngkit-sources` | BitBabbler, TrueRNG3, RDSEED, PseudoRNG adapters |
+| `rngkit-sources` | BitBabbler, TrueRNG3, RDSEED, PseudoRNG adapters and `discover()` |
 | `rngkit-analysis` | Incremental and batch descriptive cumulative statistics |
 | `rngkit-recording` | Native JSON/BIN/CSV sessions and read-only v3 import |
 | `rngkit-engine` | Synchronous, caller-owned, cancellable collection |

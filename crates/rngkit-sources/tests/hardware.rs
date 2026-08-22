@@ -91,3 +91,19 @@ fn physical_rdseed() {
         .expect("read_bits");
     assert_eq!(bytes.len(), 8);
 }
+
+#[test]
+#[ignore]
+fn physical_discover() {
+    let report = rngkit_sources::discover();
+    if !report.issues().is_empty() {
+        let first = &report.issues()[0];
+        panic!(
+            "discovery returned {} issue(s); first family={} kind={}",
+            report.issues().len(),
+            first.source_id().as_str(),
+            first.error().kind()
+        );
+    }
+    let _present = report.candidates().len();
+}

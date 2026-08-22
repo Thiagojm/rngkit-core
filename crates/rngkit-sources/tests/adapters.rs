@@ -1,8 +1,8 @@
 //! Adapter unit tests that do not enumerate or open hardware.
 
 use rngkit_core::{EntropySource, Fold, SampleBits, SourceErrorKind};
-use rngkit_sources::SourceConfig;
 use rngkit_sources::error_mapping::enforce_len;
+use rngkit_sources::{SourceCandidate, SourceConfig};
 
 struct Mock {
     descriptor: rngkit_core::SourceDescriptor,
@@ -59,6 +59,52 @@ fn bitb_config_carries_explicit_fold() {
         SourceConfig::Bitb { fold, .. } => assert_eq!(fold.get(), 3),
         #[allow(unreachable_patterns)]
         _ => panic!("expected bitb"),
+    }
+}
+
+#[cfg(feature = "bitb")]
+#[test]
+fn discovered_bitb_candidate_maps_to_explicit_config() {
+    let candidate = SourceCandidate::Bitb {
+        variant: "White".into(),
+        serial: "fake-serial".into(),
+    };
+    let fold = Fold::new(3).unwrap();
+    let config = match candidate {
+        SourceCandidate::Bitb { serial, .. } => SourceConfig::Bitb {
+            fold,
+            serial: Some(serial),
+        },
+        #[allow(unreachable_patterns)]
+        _ => panic!("expected bitb candidate"),
+    };
+    match config {
+        SourceConfig::Bitb { fold, serial } => {
+            assert_eq!(fold.get(), 3);
+            assert_eq!(serial.as_deref(), Some("fake-serial"));
+        }
+        #[allow(unreachable_patterns)]
+        _ => panic!("expected bitb config"),
+    }
+}
+
+#[cfg(feature = "trng3")]
+#[test]
+fn discovered_trng_candidate_maps_to_explicit_config() {
+    let candidate = SourceCandidate::Trng {
+        port_name: "fake-port".into(),
+    };
+    let config = match candidate {
+        SourceCandidate::Trng { port_name } => SourceConfig::Trng {
+            path: Some(port_name),
+        },
+        #[allow(unreachable_patterns)]
+        _ => panic!("expected trng candidate"),
+    };
+    match config {
+        SourceConfig::Trng { path } => assert_eq!(path.as_deref(), Some("fake-port")),
+        #[allow(unreachable_patterns)]
+        _ => panic!("expected trng config"),
     }
 }
 
