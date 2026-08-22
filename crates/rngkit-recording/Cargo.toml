@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Native JSON/BIN/CSV session bundles, read-only RngKitPSG v3 import, and derived concatenation inspection"
+description = "Native JSON/BIN/CSV session bundles, read-only RngKitPSG v3 import, and derived concatenation bundles"
 readme = "README.md"
 keywords = ["rng", "session", "csv"]
 categories = ["filesystem"]
@@ -19,6 +19,9 @@ serde_json.workspace = true
 time.workspace = true
 csv.workspace = true
 sha2.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

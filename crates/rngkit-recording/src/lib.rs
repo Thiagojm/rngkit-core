@@ -12,9 +12,12 @@ pub mod normalized;
 mod fsutil;
 
 pub use concatenation::{
-    CONCATENATION_KIND, CONCATENATION_SCHEMA_VERSION, ConcatenationInputEntry,
-    ConcatenationManifest, ConcatenationPreview, ConcatenationStem, ContentSha256,
-    inspect_legacy_csvs,
+    CONCATENATION_KIND, CONCATENATION_SCHEMA_VERSION, ConcatenationFailPoint,
+    ConcatenationInputEntry, ConcatenationManifest, ConcatenationPreview, ConcatenationStem,
+    ContentSha256, DERIVED_CSV_COLUMNS, create_legacy_csv_concatenation,
+    create_legacy_csv_concatenation_at, inspect_legacy_csvs, open_concatenation,
+    with_concatenation_fail_point, with_concatenation_inspect_hook,
+    with_concatenation_promote_hook,
 };
 pub use consistency::{ConsistencyReport, ConsistencyWarning};
 pub use error::{ConcatenationCompatibilityField, RecordingError};

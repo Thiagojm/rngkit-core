@@ -7,10 +7,6 @@
 3. `TODO.md`
 4. `README.md` and the crate you are changing
 
-Executed 2026-08-21 design/plan (durable rules live in DECISIONS):
-`docs/specs/2026-08-21-rngkit-core-design.md`,
-`docs/plans/2026-08-21-rngkit-core-plan.md`.
-
 ## Verified commands (Windows host, through 2026-08-22)
 
 From the workspace root. Stable is rustc 1.97.1; MSRV toolchain `1.85.0` is

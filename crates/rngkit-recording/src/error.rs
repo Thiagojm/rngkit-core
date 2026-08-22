@@ -145,6 +145,20 @@ pub enum RecordingError {
         /// Observed kind.
         kind: String,
     },
+    /// An input file changed after inspection and before derived bytes were written.
+    #[error("concatenation input {basename} changed after inspection")]
+    ConcatenationInputChanged {
+        /// Input basename.
+        basename: String,
+    },
+    /// Derived concatenation writing failed at a named stage.
+    #[error("concatenation failed at {stage}: {reason}")]
+    ConcatenationWrite {
+        /// Write stage that failed.
+        stage: &'static str,
+        /// Diagnostic.
+        reason: String,
+    },
     /// A domain value failed validation.
     #[error(transparent)]
     Core(#[from] rngkit_core::CoreError),

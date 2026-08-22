@@ -7,10 +7,14 @@ use rngkit_core::{
     IntervalSeconds, SampleBits, SampleIndex, SampleRecord, SessionStatus, SourceId,
     TimestampProvenance, UtcTimestamp,
 };
-use rngkit_recording::{NormalizedMeta, NormalizedSession, SessionStem};
+use rngkit_recording::{
+    ConcatenationStem, NormalizedMeta, NormalizedSession, SessionStem,
+    create_legacy_csv_concatenation_at, open_concatenation,
+};
 use rngkit_xlsx::{
     EXCEL_MAX_SAMPLE_ROWS, Overwrite, REF_MINUS, REF_PLUS, SAMPLES_SHEET, SUMMARY_SHEET, XlsxError,
-    native_report_path, with_report_promote_hook, with_workbook_write_failure, write_report,
+    derived_report_path, native_report_path, with_report_promote_hook, with_workbook_write_failure,
+    write_report,
 };
 use tempfile::tempdir;
 use zip::ZipArchive;
@@ -291,4 +295,50 @@ fn native_report_path_stays_inside_session_dir() {
     write_report(&session_with(&[4]), &path, Overwrite::ErrorIfExists).unwrap();
     assert!(path.exists());
     assert!(!dir.path().join("outside.xlsx").exists());
+}
+
+#[test]
+fn derived_report_matches_ordered_concatenation_rows() {
+    let dir = tempdir().unwrap();
+    let earlier = dir.path().join("20260821T183000_trng_s16_i1.csv");
+    let later = dir.path().join("20260821T183010_trng_s16_i1.csv");
+    std::fs::write(&earlier, "20260821T18:30:00,8\n20260821T18:30:01,8\n").unwrap();
+    std::fs::write(&later, "20260821T18:30:10,4\n20260821T18:30:11,4\n").unwrap();
+    let earlier_bytes = std::fs::read(&earlier).unwrap();
+    let later_bytes = std::fs::read(&later).unwrap();
+
+    let output = dir.path().join("out");
+    std::fs::create_dir(&output).unwrap();
+    let date = time::Date::from_calendar_date(2026, time::Month::August, 21).unwrap();
+    let clock = time::Time::from_hms(18, 30, 0).unwrap();
+    let offset = time::UtcOffset::from_hms(-3, 0, 0).unwrap();
+    let local = time::PrimitiveDateTime::new(date, clock).assume_offset(offset);
+    let bundle = create_legacy_csv_concatenation_at(
+        &[later.clone(), earlier.clone()],
+        &output,
+        local,
+        offset,
+    )
+    .unwrap();
+    let session = open_concatenation(&bundle).unwrap();
+    let stem = ConcatenationStem::parse(&session.meta().stem).unwrap();
+    let dest = derived_report_path(&bundle, &stem).unwrap();
+    let root = bundle.canonicalize().unwrap();
+    assert!(dest.starts_with(&root));
+    write_report(&session, &dest, Overwrite::ErrorIfExists).unwrap();
+
+    let mut wb: Xlsx<_> = open_workbook(&dest).unwrap();
+    let samples = wb.worksheet_range(SAMPLES_SHEET).unwrap();
+    let ones: Vec<i64> = samples
+        .rows()
+        .skip(1)
+        .map(|row| match &row[4] {
+            Data::Float(value) => *value as i64,
+            Data::Int(value) => *value,
+            other => panic!("unexpected ones cell {other:?}"),
+        })
+        .collect();
+    assert_eq!(ones, vec![8, 8, 4, 4]);
+    assert_eq!(std::fs::read(&earlier).unwrap(), earlier_bytes);
+    assert_eq!(std::fs::read(&later).unwrap(), later_bytes);
 }

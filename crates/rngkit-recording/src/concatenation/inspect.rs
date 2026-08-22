@@ -70,6 +70,15 @@ impl ConcatenationPreview {
     }
 }
 
+/// Inspected preview plus the corresponding ordered input paths.
+///
+/// Paths are crate-internal so creation can reopen the same files. They are
+/// never stored on [`ConcatenationPreview`].
+pub(crate) struct OrderedInspection {
+    pub preview: ConcatenationPreview,
+    pub paths: Vec<PathBuf>,
+}
+
 /// Inspects legacy v3 CSV paths without modifying them or retaining rows.
 ///
 /// The returned preview is ordered by first-row timestamp. It contains
@@ -82,6 +91,13 @@ impl ConcatenationPreview {
 /// decreasing, or overlapping, including equal timestamp boundaries between
 /// files.
 pub fn inspect_legacy_csvs(paths: &[PathBuf]) -> Result<ConcatenationPreview, RecordingError> {
+    Ok(inspect_legacy_csvs_ordered(paths)?.preview)
+}
+
+/// Inspects inputs and returns preview metadata with matching ordered paths.
+pub(crate) fn inspect_legacy_csvs_ordered(
+    paths: &[PathBuf],
+) -> Result<OrderedInspection, RecordingError> {
     if paths.is_empty() {
         return Err(RecordingError::EmptyConcatenationInputs);
     }
@@ -124,6 +140,7 @@ pub fn inspect_legacy_csvs(paths: &[PathBuf]) -> Result<ConcatenationPreview, Re
             Some(compat) => check_compat(compat, &stem, &basename)?,
         }
         files.push(InspectedFile {
+            path: path.clone(),
             basename,
             sha256: inspected.sha256,
             row_count: inspected.row_count,
@@ -150,6 +167,7 @@ pub fn inspect_legacy_csvs(paths: &[PathBuf]) -> Result<ConcatenationPreview, Re
     let mut next_index = 1u64;
     let mut total_rows = 0u64;
     let mut entries = Vec::with_capacity(files.len());
+    let mut ordered_paths = Vec::with_capacity(files.len());
     for file in files {
         total_rows = total_rows
             .checked_add(file.row_count)
@@ -162,6 +180,7 @@ pub fn inspect_legacy_csvs(paths: &[PathBuf]) -> Result<ConcatenationPreview, Re
         next_index = output_end_raw
             .checked_add(1)
             .ok_or(RecordingError::ConcatenationCountOverflow)?;
+        ordered_paths.push(file.path);
         entries.push(ConcatenationInputEntry::new(
             file.basename,
             file.sha256,
@@ -176,13 +195,16 @@ pub fn inspect_legacy_csvs(paths: &[PathBuf]) -> Result<ConcatenationPreview, Re
     let Some(compat) = expected else {
         return Err(RecordingError::EmptyConcatenationInputs);
     };
-    Ok(ConcatenationPreview {
-        source_id: compat.source,
-        sample_bits: compat.sample_bits,
-        interval: compat.interval,
-        fold: compat.fold,
-        total_rows,
-        inputs: entries,
+    Ok(OrderedInspection {
+        preview: ConcatenationPreview {
+            source_id: compat.source,
+            sample_bits: compat.sample_bits,
+            interval: compat.interval,
+            fold: compat.fold,
+            total_rows,
+            inputs: entries,
+        },
+        paths: ordered_paths,
     })
 }
 
@@ -195,6 +217,7 @@ struct Compatibility {
 }
 
 struct InspectedFile {
+    path: PathBuf,
     basename: String,
     sha256: ContentSha256,
     row_count: u64,
@@ -202,11 +225,11 @@ struct InspectedFile {
     last: UtcTimestamp,
 }
 
-struct RowScan {
-    sha256: ContentSha256,
-    row_count: u64,
-    first: UtcTimestamp,
-    last: UtcTimestamp,
+pub(crate) struct RowScan {
+    pub sha256: ContentSha256,
+    pub row_count: u64,
+    pub first: UtcTimestamp,
+    pub last: UtcTimestamp,
 }
 
 struct HashingReader<R> {
@@ -228,6 +251,18 @@ fn inspect_one_csv(
     path: &Path,
     basename: &str,
     sample_bits: SampleBits,
+) -> Result<RowScan, RecordingError> {
+    for_each_legacy_csv_row(path, basename, sample_bits, |_timestamp, _ones| Ok(()))
+}
+
+/// Streams one legacy CSV, hashing raw bytes and visiting each data row.
+///
+/// Does not retain the combined rows. The visitor may write derived output.
+pub(crate) fn for_each_legacy_csv_row(
+    path: &Path,
+    basename: &str,
+    sample_bits: SampleBits,
+    mut visit: impl FnMut(UtcTimestamp, u64) -> Result<(), RecordingError>,
 ) -> Result<RowScan, RecordingError> {
     let file = File::open(path)?;
     let mut hashing = HashingReader {
@@ -252,7 +287,7 @@ fn inspect_one_csv(
                     basename: basename.to_owned(),
                 });
             }
-            let timestamp = parse_legacy_csv_line(trimmed, index + 1, sample_bits)?;
+            let (timestamp, ones) = parse_legacy_csv_line(trimmed, index + 1, sample_bits)?;
             if let Some(previous) = prev {
                 if timestamp < previous {
                     return Err(RecordingError::DecreasingConcatenationTimestamp {
@@ -260,6 +295,7 @@ fn inspect_one_csv(
                     });
                 }
             }
+            visit(timestamp, ones)?;
             if first.is_none() {
                 first = Some(timestamp);
             }
@@ -292,7 +328,7 @@ fn parse_legacy_csv_line(
     line: &str,
     line_number: usize,
     sample_bits: SampleBits,
-) -> Result<UtcTimestamp, RecordingError> {
+) -> Result<(UtcTimestamp, u64), RecordingError> {
     if !line.contains(',') {
         return Err(RecordingError::UnsupportedVersion {
             reason: format!("line {line_number} is not comma-delimited"),
@@ -328,7 +364,7 @@ fn parse_legacy_csv_line(
             sample_bits: sample_bits.get(),
         });
     }
-    Ok(timestamp)
+    Ok((timestamp, ones))
 }
 
 fn is_native_header(line: &str) -> bool {

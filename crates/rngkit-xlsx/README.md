@@ -1,6 +1,7 @@
 # rngkit-xlsx
 
-Excel analysis report generation for native and legacy RngKit sessions.
+Excel analysis report generation for native, legacy, and derived concatenation
+RngKit sessions.
 
 The workbook has two user-visible sheets, `Summary` and `Samples`, plus a
 cumulative signed-Z line chart with a zero line and dashed visual references at
@@ -8,8 +9,8 @@ cumulative signed-Z line chart with a zero line and dashed visual references at
 rejection, pass, or fail boundaries. No p-value is written.
 
 This crate consumes normalized readers and `rngkit-analysis`. It does not parse
-BIN or CSV itself. Native report paths are built from a validated session stem
-and must remain inside the session directory. Workbooks are written to a unique
-create-new temporary file in the destination directory and promoted only after
-a successful close; `ErrorIfExists` never replaces a destination that appears
-concurrently.
+BIN or CSV itself. Native and derived report paths are built from a validated
+stem and must remain inside the selected directory. Workbooks are written to a
+unique create-new temporary file in the destination directory and promoted only
+after a successful close; `ErrorIfExists` never replaces a destination that
+appears concurrently.

@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rngkit_analysis::{Snapshot, analyze_records};
 use rngkit_core::TimestampProvenance;
-use rngkit_recording::{NormalizedSession, SessionStem, join_contained};
+use rngkit_recording::{ConcatenationStem, NormalizedSession, SessionStem, join_contained};
 use rust_xlsxwriter::{
     Chart, ChartLine, ChartLineDashType, ChartType, Format, Workbook, Worksheet,
     XlsxError as BookError,
@@ -43,6 +43,23 @@ pub enum Overwrite {
 pub fn native_report_path(session_dir: &Path, stem: &SessionStem) -> Result<PathBuf, XlsxError> {
     let name = format!("{}.xlsx", stem.as_str());
     Ok(join_contained(session_dir, &name)?)
+}
+
+/// Output path for a derived concatenation bundle: `<dir>/<stem>.xlsx`.
+///
+/// `stem` must already be a validated [`ConcatenationStem`]. The resolved path
+/// is required to stay inside `bundle_dir`.
+///
+/// # Errors
+///
+/// Returns [`XlsxError::Recording`] when the filename would escape
+/// `bundle_dir` or `bundle_dir` cannot be canonicalized.
+pub fn derived_report_path(
+    bundle_dir: &Path,
+    stem: &ConcatenationStem,
+) -> Result<PathBuf, XlsxError> {
+    let name = format!("{}.xlsx", stem.as_str());
+    Ok(join_contained(bundle_dir, &name)?)
 }
 
 /// Output path for a legacy input: sibling of the selected file.

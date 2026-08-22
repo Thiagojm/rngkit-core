@@ -76,7 +76,7 @@
 
 ### Derived legacy CSV concatenation (2026-08-22)
 
-- Status: accepted for inspection; bundle writing is the next library step
+- Status: accepted
 - Contract:
   - Derived names use `YYYYMMDDTHHMMSS_concat_<source>_s<bits>_i<seconds>[_f<fold>]`
     and are independent of `SessionStem`
@@ -92,11 +92,20 @@
     fail with explicit `RecordingError` variants
   - Manifest parsing revalidates every input's nonzero row count, timestamp
     order, and inclusive output span after deserialization
-  - Preview is advisory; creation must reopen and revalidate inputs
+  - Preview is advisory; `create_legacy_csv_concatenation` reopens, rehashes,
+    and revalidates inputs, then streams
+    `sample_index,captured_at_utc,ones,input_index,input_sample_index`
+  - Creation uses a unique contained staging directory, syncs CSV and manifest,
+    and promotes with atomic no-replace primitives on Windows and supported
+    Unix targets; unsupported Unix targets fail closed. Failure cleans owned
+    staging and does not mutate inputs
+  - `open_concatenation` validates the contained same-stem CSV, ranges, and
+    one-count bounds, then returns a `NormalizedSession`
+  - `derived_report_path` stays inside the validated bundle directory
 - Why: the approved Tauri Combine workflow needs reusable provenance-bearing
   concatenation without copying the legacy sort-and-append behavior
-- Impact: `rngkit-recording` gains SHA-256; bundle write/read and derived XLSX
-  remain a later checkpoint
+- Impact: `rngkit-recording` owns SHA-256, derived bundles, and
+  `open_concatenation`; `rngkit-xlsx` consumes the normalized view
 
 ### MSRV-compatible Excel stack (2026-08-21)
 

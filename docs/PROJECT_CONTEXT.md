@@ -19,6 +19,9 @@ descriptive cumulative statistics, and can export an Excel report.
 7. Export `<stem>.xlsx` with Summary, Samples, and a descriptive Z chart.
 8. Inspect compatible legacy v3 CSVs with `inspect_legacy_csvs` for a derived
    concatenation preview (basenames and SHA-256, no absolute paths).
+9. Create a derived concatenation bundle with
+   `create_legacy_csv_concatenation`, reopen it with `open_concatenation`, and
+   export XLSX through `derived_report_path` / `write_report`.
 
 ## Domain terms
 
@@ -47,5 +50,9 @@ descriptive cumulative statistics, and can export an Excel report.
 - Derived concatenation inspects distinct nonempty legacy v3 CSVs with matching
   source/bits/interval/fold; equal timestamps are allowed inside one file and
   rejected as overlap between files; previews never persist absolute input paths
-- Derived manifest parsing revalidates nonzero input rows, timestamp order,
-  exact inclusive output spans, and contiguous ranges instead of trusting JSON
+- Derived creation reopens and revalidates inputs, streams a same-stem CSV plus
+  `manifest.json` through unique staging, and promotes with atomic no-replace
+  semantics on Windows and supported Unix targets; unsupported Unix targets
+  fail closed. Inputs are not mutated; readers validate contained CSV, ranges,
+  and one-count bounds
+- Derived report paths stay inside the validated bundle directory

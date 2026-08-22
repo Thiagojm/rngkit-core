@@ -9,6 +9,6 @@ pub use layout::{
     EXCEL_MAX_SAMPLE_ROWS, REF_MINUS, REF_PLUS, REF_ZERO, SAMPLES_SHEET, SUMMARY_SHEET,
 };
 pub use report::{
-    Overwrite, legacy_report_path, native_report_path, with_report_promote_hook,
-    with_workbook_write_failure, write_report,
+    Overwrite, derived_report_path, legacy_report_path, native_report_path,
+    with_report_promote_hook, with_workbook_write_failure, write_report,
 };

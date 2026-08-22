@@ -564,6 +564,7 @@ version = "0.1.0"
 dependencies = [
  "csv",
  "rngkit-core",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

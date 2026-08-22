@@ -1,7 +1,7 @@
 # rngkit-recording
 
 Native JSON/BIN/CSV session bundles, read-only RngKitPSG version 3 import, and
-derived concatenation inspection.
+derived concatenation inspection and bundle creation.
 
 New sessions use the version 3 filename stem
 `YYYYMMDDTHHMMSS_<source>_s<bits>_i<seconds>[_f<fold>]` inside a directory that
@@ -25,4 +25,10 @@ equal inside one file but equal or overlapping boundaries between files are
 rejected. Preview, debug, and serialized values expose basenames and hashes,
 never absolute input paths. The derived stem grammar is
 `YYYYMMDDTHHMMSS_concat_<source>_s<bits>_i<seconds>[_f<fold>]` and is not a
-collected session name. Bundle writing is a separate API.
+collected session name.
+
+`create_legacy_csv_concatenation` reopens and revalidates inputs, streams rows
+into a unique staging directory, and promotes a same-stem CSV plus
+`manifest.json` without replacing an existing destination. Failure removes
+owned staging data and does not modify inputs. `open_concatenation` validates
+the contained CSV against the manifest and returns a normalized session.
