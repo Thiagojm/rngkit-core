@@ -22,6 +22,20 @@ pub enum OpenedSource {
 
 impl EntropySource for OpenedSource {
     fn descriptor(&self) -> &rngkit_core::SourceDescriptor {
+        #[cfg(not(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        )))]
+        unreachable!("OpenedSource has no variants without source features");
+
+        #[cfg(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        ))]
         match self {
             #[cfg(feature = "bitb")]
             Self::Bitb(src) => src.descriptor(),
@@ -35,6 +49,23 @@ impl EntropySource for OpenedSource {
     }
 
     fn read_bits(&mut self, bits: rngkit_core::SampleBits) -> Result<Vec<u8>, SourceError> {
+        #[cfg(not(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        )))]
+        {
+            let _ = bits;
+            unreachable!("OpenedSource has no variants without source features");
+        }
+
+        #[cfg(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        ))]
         match self {
             #[cfg(feature = "bitb")]
             Self::Bitb(src) => src.read_bits(bits),

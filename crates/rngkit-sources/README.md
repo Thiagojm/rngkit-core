@@ -14,6 +14,9 @@ adapter. Callers map a chosen candidate to `SourceConfig` themselves,
 including BitBabbler fold. This crate does not serialize discovery types; a
 Tauri adapter must define its own DTOs.
 
+With all source features disabled, the crate still compiles and `discover()`
+returns an empty report; no source can be constructed or opened.
+
 Hardware listing never silently selects the first device when multiple devices
 are present. BitBabbler collection uses `get_bits_with_fold`; the other
 adapters use `get_bits`. There is no fallback between source kinds.

@@ -11,7 +11,7 @@ Executed 2026-08-21 design/plan (durable rules live in DECISIONS):
 `docs/specs/2026-08-21-rngkit-core-design.md`,
 `docs/plans/2026-08-21-rngkit-core-plan.md`.
 
-## Verified commands (Windows host, 2026-08-21)
+## Verified commands (Windows host, through 2026-08-22)
 
 From the workspace root. Stable is rustc 1.97.1; MSRV toolchain `1.85.0` is
 installed. Do not install a missing toolchain silently.
@@ -26,6 +26,7 @@ cargo test --workspace --doc --all-features
 cargo +1.85.0 check --workspace --all-targets --all-features
 cargo +1.85.0 test --workspace --all-targets --all-features
 cargo tree --workspace --all-features
+cargo check -p rngkit-sources --no-default-features
 cargo check -p rngkit-sources --no-default-features --features bitb
 cargo check -p rngkit-sources --no-default-features --features trng3
 cargo check -p rngkit-sources --no-default-features --features rdseed
@@ -33,7 +34,7 @@ cargo check -p rngkit-sources --no-default-features --features pseudo
 git diff --check
 ```
 
-Physical tests (Windows host, 2026-08-21):
+Physical tests (Windows host, through 2026-08-22):
 
 ```text
 cargo test -p rngkit-sources --test hardware -- --ignored --test-threads=1 --nocapture

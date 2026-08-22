@@ -6,8 +6,12 @@
 //!
 //! Only genuine source absence may skip. Device serials are never recorded.
 
-use rngkit_core::{EntropySource, Fold, SampleBits, SourceErrorKind};
+#[cfg(feature = "bitb")]
+use rngkit_core::Fold;
+#[cfg(any(feature = "bitb", feature = "trng3", feature = "rdseed"))]
+use rngkit_core::{EntropySource, SampleBits, SourceErrorKind};
 
+#[cfg(any(feature = "bitb", feature = "trng3", feature = "rdseed"))]
 fn skip_if_absent(kind: SourceErrorKind, label: &str) -> bool {
     matches!(
         kind,

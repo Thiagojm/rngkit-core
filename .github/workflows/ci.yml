@@ -48,6 +48,7 @@ jobs:
       - name: Feature subsets
         shell: bash
         run: |
+          cargo check -p rngkit-sources --no-default-features
           cargo check -p rngkit-sources --no-default-features --features bitb
           cargo check -p rngkit-sources --no-default-features --features trng3
           cargo check -p rngkit-sources --no-default-features --features rdseed

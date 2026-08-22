@@ -10,7 +10,7 @@
 - Unified `rngkit_sources::discover()` snapshot API from the approved
   2026-08-21 source-discovery design/plan
 - Windows deterministic stable and MSRV 1.85 validation after discovery:
-  92 regular tests, 7 doctests
+  92 regular tests, 7 doctests, all-features and zero/single-feature builds
 - Physical BitBabbler, TrueRNG3, RDSEED, and `physical_discover` tests
   passed serially on this Windows host
 - Base library CI passed on Windows and Ubuntu, stable and Rust 1.85, for

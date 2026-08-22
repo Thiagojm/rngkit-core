@@ -199,6 +199,7 @@ cargo test --workspace --doc --all-features
 cargo +1.85.0 check --workspace --all-targets --all-features
 cargo +1.85.0 test --workspace --all-targets --all-features
 cargo tree --workspace --all-features
+cargo check -p rngkit-sources --no-default-features
 cargo check -p rngkit-sources --no-default-features --features bitb
 cargo check -p rngkit-sources --no-default-features --features trng3
 cargo check -p rngkit-sources --no-default-features --features rdseed

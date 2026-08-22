@@ -1,8 +1,11 @@
 //! Adapter unit tests that do not enumerate or open hardware.
 
 use rngkit_core::{EntropySource, Fold, SampleBits, SourceErrorKind};
+#[cfg(any(feature = "bitb", feature = "trng3"))]
+use rngkit_sources::SourceCandidate;
+#[cfg(any(feature = "bitb", feature = "trng3", feature = "pseudo"))]
+use rngkit_sources::SourceConfig;
 use rngkit_sources::error_mapping::enforce_len;
-use rngkit_sources::{SourceCandidate, SourceConfig};
 
 struct Mock {
     descriptor: rngkit_core::SourceDescriptor,

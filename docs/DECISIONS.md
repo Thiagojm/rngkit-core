@@ -54,6 +54,8 @@
     keep the underlying crate order
   - Empty hardware lists, hardware `NotAvailable`, unsupported RDSEED, and
     disabled features are normal absence
+  - With all source features disabled, the crate remains usable for composition
+    and `discover()` returns an empty report
   - Any other per-family failure is retained as an issue and does not hide
     later families
   - BitBabbler/TrueRNG are listed, never opened, and never implicitly reduced

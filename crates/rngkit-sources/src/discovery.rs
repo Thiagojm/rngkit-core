@@ -38,6 +38,20 @@ impl SourceCandidate {
     /// Stable typed source identity for this candidate.
     #[must_use]
     pub fn source_id(&self) -> SourceId {
+        #[cfg(not(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        )))]
+        unreachable!("SourceCandidate has no variants without source features");
+
+        #[cfg(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        ))]
         match self {
             #[cfg(feature = "bitb")]
             Self::Bitb { .. } => SourceId::bitb(),
@@ -53,6 +67,20 @@ impl SourceCandidate {
     /// Safe static display label. Does not include serials, ports, or state.
     #[must_use]
     pub fn label(&self) -> &'static str {
+        #[cfg(not(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        )))]
+        unreachable!("SourceCandidate has no variants without source features");
+
+        #[cfg(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        ))]
         match self {
             #[cfg(feature = "bitb")]
             Self::Bitb { .. } => "BitBabbler",
@@ -133,12 +161,29 @@ pub fn discover() -> DiscoveryReport {
 }
 
 fn discover_with(backend: &impl DiscoveryBackend) -> DiscoveryReport {
+    #[cfg_attr(
+        not(any(
+            feature = "bitb",
+            feature = "trng3",
+            feature = "rdseed",
+            feature = "pseudo"
+        )),
+        allow(unused_mut)
+    )]
     let mut candidates = Vec::new();
     #[cfg_attr(
         not(any(feature = "bitb", feature = "trng3", feature = "pseudo")),
         allow(unused_mut)
     )]
     let mut issues = Vec::new();
+
+    #[cfg(not(any(
+        feature = "bitb",
+        feature = "trng3",
+        feature = "rdseed",
+        feature = "pseudo"
+    )))]
+    let _ = backend;
 
     #[cfg(feature = "bitb")]
     match backend.list_bitb() {
@@ -224,6 +269,7 @@ impl DiscoveryBackend for LiveBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "bitb", feature = "trng3", feature = "pseudo"))]
     use rngkit_core::SourceErrorKind;
 
     struct FakeBackend {
@@ -237,6 +283,9 @@ mod tests {
         pseudo: Result<(), SourceError>,
     }
 
+    // With no features this is an empty struct and Clippy suggests deriving;
+    // enabled features contain Result fields that do not implement Default.
+    #[allow(clippy::derivable_impls)]
     impl Default for FakeBackend {
         fn default() -> Self {
             Self {
@@ -283,10 +332,12 @@ mod tests {
         }
     }
 
+    #[cfg(any(feature = "bitb", feature = "trng3", feature = "pseudo"))]
     fn err(kind: SourceErrorKind, message: &str) -> SourceError {
         SourceError::new(kind, message)
     }
 
+    #[cfg(any(feature = "bitb", feature = "trng3", feature = "pseudo"))]
     fn issue_kinds(report: &DiscoveryReport) -> Vec<(String, SourceErrorKind)> {
         report
             .issues()
@@ -295,6 +346,7 @@ mod tests {
             .collect()
     }
 
+    #[cfg(any(feature = "bitb", feature = "trng3", feature = "rdseed"))]
     fn candidate_ids(report: &DiscoveryReport) -> Vec<SourceId> {
         report
             .candidates()
@@ -345,23 +397,26 @@ mod tests {
         let empty = discover_with(&FakeBackend::default());
         assert!(empty.issues().is_empty());
 
-        let missing = FakeBackend {
+        #[cfg(any(feature = "bitb", feature = "trng3"))]
+        {
+            let missing = FakeBackend {
+                #[cfg(feature = "bitb")]
+                bitb: Err(err(SourceErrorKind::NotAvailable, "no bitb")),
+                #[cfg(feature = "trng3")]
+                trng: Err(err(SourceErrorKind::NotAvailable, "no trng")),
+                ..FakeBackend::default()
+            };
+            let report = discover_with(&missing);
+            assert!(report.issues().is_empty());
             #[cfg(feature = "bitb")]
-            bitb: Err(err(SourceErrorKind::NotAvailable, "no bitb")),
+            assert!(!candidate_ids(&report).iter().any(SourceId::is_bitb));
             #[cfg(feature = "trng3")]
-            trng: Err(err(SourceErrorKind::NotAvailable, "no trng")),
-            ..FakeBackend::default()
-        };
-        let report = discover_with(&missing);
-        assert!(report.issues().is_empty());
-        #[cfg(feature = "bitb")]
-        assert!(!candidate_ids(&report).iter().any(SourceId::is_bitb));
-        #[cfg(feature = "trng3")]
-        assert!(
-            !candidate_ids(&report)
-                .iter()
-                .any(|id| id.as_str() == "trng")
-        );
+            assert!(
+                !candidate_ids(&report)
+                    .iter()
+                    .any(|id| id.as_str() == "trng")
+            );
+        }
     }
 
     #[cfg(all(

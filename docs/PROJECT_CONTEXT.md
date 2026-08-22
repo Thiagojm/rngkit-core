@@ -33,6 +33,8 @@ descriptive cumulative statistics, and can export an Excel report.
 - Default tests never enumerate or open hardware
 - `discover()` is a best-effort snapshot: present candidates plus per-family
   issues; it does not watch hot-plug, cache, or reserve a device
+- With every source feature disabled, `rngkit-sources` still compiles and
+  `discover()` returns an empty report
 - Do not persist serials, OS device paths, seeds, or PRNG state
 - Native manifests and report paths must stay inside the selected session directory
 - Native BIN, CSV, and `manifest.json` opens must not follow links out of the session
