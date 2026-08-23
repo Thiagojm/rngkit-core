@@ -39,6 +39,8 @@ descriptive cumulative statistics, and can export an Excel report.
 - Default tests never enumerate or open hardware
 - `discover()` is a best-effort snapshot: present candidates plus per-family
   issues; it does not watch hot-plug, cache, or reserve a device
+- Discovery never opens a source or reads entropy; an enabled PseudoRNG is
+  advertised as a compiled capability and checks OS entropy only at `open()`
 - With every source feature disabled, `rngkit-sources` still compiles and
   `discover()` returns an empty report
 - Do not persist serials, OS device paths, seeds, or PRNG state

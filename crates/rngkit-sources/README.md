@@ -8,9 +8,9 @@ and per-family issues. Empty hardware lists, `NotAvailable`, unsupported
 RDSEED, and compile-time-disabled features are omitted. Other enumeration
 failures stay in `issues` and do not hide later families. BitBabbler serials
 and TrueRNG ports are transient selectors only; they are never persisted.
-Discovery does not open BitBabbler or TrueRNG devices or read entropy.
-PseudoRNG is probed by constructing and immediately dropping a default
-adapter. Callers map a chosen candidate to `SourceConfig` themselves,
+Discovery does not open a source or read entropy. PseudoRNG is advertised when
+its feature is compiled in; OS entropy is checked only when a caller explicitly
+opens it. Callers map a chosen candidate to `SourceConfig` themselves,
 including BitBabbler fold. This crate does not serialize discovery types; a
 Tauri adapter must define its own DTOs.
 

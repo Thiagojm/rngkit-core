@@ -9,6 +9,8 @@
   and failed-session finalization for sink and completed-manifest errors
 - Unified `rngkit_sources::discover()` snapshot API from the approved
   2026-08-21 source-discovery design/plan
+- PseudoRNG discovery advertises compiled capability without constructing an
+  OS-seeded adapter; explicit `open()` remains authoritative
 - Physical BitBabbler, TrueRNG3, RDSEED, and `physical_discover` tests
   passed serially on this Windows host
 - CI passed on Windows and Ubuntu, stable and Rust 1.85:

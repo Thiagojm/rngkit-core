@@ -60,8 +60,9 @@
     later families
   - BitBabbler/TrueRNG are listed, never opened, and never implicitly reduced
     to the first device
-  - PseudoRNG is probed by constructing and immediately dropping a default
-    adapter; seed and generator state are not exposed
+  - PseudoRNG is advertised when its feature is compiled in; discovery does
+    not construct the adapter, and OS entropy is checked only at explicit
+    `open()`
   - Serials and port names exist only on transient candidates; they are not
     added to descriptors, manifests, sessions, reports, or serde types
   - Tauri must map this API to its own DTOs; the library adds no serialization
@@ -69,7 +70,8 @@
   - Deterministic tests inject a private fake backend; only the ignored
     physical smoke test calls public `discover()`
 - Why: keep adapter discovery policy in the library so Tauri and later
-  consumers do not duplicate it
+  consumers do not duplicate it, while keeping discovery free of source opens
+  and entropy acquisition
 - Impact: discovery does not reserve a device; `open()` remains authoritative
   after the snapshot. Remote CI passed on Windows and Ubuntu with stable and
   Rust 1.85 for commit `dce82be`

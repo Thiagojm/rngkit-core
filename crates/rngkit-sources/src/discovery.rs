@@ -29,7 +29,7 @@ pub enum SourceCandidate {
     /// Intel RDSEED is supported in this process.
     #[cfg(feature = "rdseed")]
     Rdseed,
-    /// OS-seeded ChaCha20 PseudoRNG constructed successfully.
+    /// OS-seeded ChaCha20 PseudoRNG capability is compiled in.
     #[cfg(feature = "pseudo")]
     Pseudo,
 }
@@ -150,9 +150,10 @@ impl DiscoveryReport {
 /// [`DiscoveryIssue`] and discovery continues.
 ///
 /// BitBabbler and TrueRNG devices are listed without opening them or reading
-/// entropy. PseudoRNG is probed by constructing and immediately dropping a
-/// default adapter. Multiple hardware devices remain separate candidates;
-/// callers choose an explicit selector when opening.
+/// entropy. PseudoRNG is advertised when its feature is compiled in; OS
+/// entropy is checked only when the caller explicitly opens it. Multiple
+/// hardware devices remain separate candidates; callers choose an explicit
+/// selector when opening.
 ///
 /// Call this from a blocking context: enumeration may perform operating-system
 /// I/O. The result is a snapshot, not a reservation, and is not cached.
@@ -171,18 +172,10 @@ fn discover_with(backend: &impl DiscoveryBackend) -> DiscoveryReport {
         allow(unused_mut)
     )]
     let mut candidates = Vec::new();
-    #[cfg_attr(
-        not(any(feature = "bitb", feature = "trng3", feature = "pseudo")),
-        allow(unused_mut)
-    )]
+    #[cfg_attr(not(any(feature = "bitb", feature = "trng3")), allow(unused_mut))]
     let mut issues = Vec::new();
 
-    #[cfg(not(any(
-        feature = "bitb",
-        feature = "trng3",
-        feature = "rdseed",
-        feature = "pseudo"
-    )))]
+    #[cfg(not(any(feature = "bitb", feature = "trng3", feature = "rdseed")))]
     let _ = backend;
 
     #[cfg(feature = "bitb")]
@@ -216,13 +209,7 @@ fn discover_with(backend: &impl DiscoveryBackend) -> DiscoveryReport {
     }
 
     #[cfg(feature = "pseudo")]
-    match backend.probe_pseudo() {
-        Ok(()) => candidates.push(SourceCandidate::Pseudo),
-        Err(err) => issues.push(DiscoveryIssue {
-            source_id: SourceId::pseudo(),
-            error: err,
-        }),
-    }
+    candidates.push(SourceCandidate::Pseudo);
 
     DiscoveryReport { candidates, issues }
 }
@@ -236,9 +223,6 @@ trait DiscoveryBackend {
 
     #[cfg(feature = "rdseed")]
     fn rdseed_supported(&self) -> bool;
-
-    #[cfg(feature = "pseudo")]
-    fn probe_pseudo(&self) -> Result<(), SourceError>;
 }
 
 struct LiveBackend;
@@ -258,12 +242,6 @@ impl DiscoveryBackend for LiveBackend {
     fn rdseed_supported(&self) -> bool {
         crate::adapters::RdseedAdapter::is_supported()
     }
-
-    #[cfg(feature = "pseudo")]
-    fn probe_pseudo(&self) -> Result<(), SourceError> {
-        let _adapter = crate::adapters::PseudoAdapter::open(None)?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -279,8 +257,6 @@ mod tests {
         trng: Result<Vec<crate::adapters::trng3::TrngListing>, SourceError>,
         #[cfg(feature = "rdseed")]
         rdseed: bool,
-        #[cfg(feature = "pseudo")]
-        pseudo: Result<(), SourceError>,
     }
 
     // With no features this is an empty struct and Clippy suggests deriving;
@@ -295,8 +271,6 @@ mod tests {
                 trng: Ok(Vec::new()),
                 #[cfg(feature = "rdseed")]
                 rdseed: false,
-                #[cfg(feature = "pseudo")]
-                pseudo: Ok(()),
             }
         }
     }
@@ -321,14 +295,6 @@ mod tests {
         #[cfg(feature = "rdseed")]
         fn rdseed_supported(&self) -> bool {
             self.rdseed
-        }
-
-        #[cfg(feature = "pseudo")]
-        fn probe_pseudo(&self) -> Result<(), SourceError> {
-            match &self.pseudo {
-                Ok(()) => Ok(()),
-                Err(err) => Err(SourceError::new(err.kind(), err.message().to_owned())),
-            }
         }
     }
 
@@ -447,7 +413,6 @@ mod tests {
                 },
             ]),
             rdseed: true,
-            pseudo: Ok(()),
         };
         let report = discover_with(&backend);
         assert!(report.issues().is_empty());
@@ -500,19 +465,17 @@ mod tests {
             bitb: Err(err(SourceErrorKind::PermissionDenied, "bitb denied")),
             trng: Err(err(SourceErrorKind::Timeout, "trng timeout")),
             rdseed: true,
-            pseudo: Err(err(
-                SourceErrorKind::EntropyUnavailable,
-                "os entropy unavailable",
-            )),
         };
         let report = discover_with(&backend);
-        assert_eq!(report.candidates(), &[SourceCandidate::Rdseed]);
+        assert_eq!(
+            report.candidates(),
+            &[SourceCandidate::Rdseed, SourceCandidate::Pseudo]
+        );
         assert_eq!(
             issue_kinds(&report),
             vec![
                 ("bitb".into(), SourceErrorKind::PermissionDenied),
                 ("trng".into(), SourceErrorKind::Timeout),
-                ("pseudo".into(), SourceErrorKind::EntropyUnavailable),
             ]
         );
     }
@@ -590,7 +553,7 @@ mod tests {
 
     #[cfg(feature = "pseudo")]
     #[test]
-    fn successful_pseudo_probe_adds_one_candidate() {
+    fn compiled_pseudo_adds_one_candidate_without_a_probe() {
         let report = discover_with(&FakeBackend::default());
         let pseudos: Vec<_> = report
             .candidates()
@@ -604,31 +567,6 @@ mod tests {
                 .iter()
                 .all(|issue| issue.source_id().as_str() != "pseudo")
         );
-    }
-
-    #[cfg(feature = "pseudo")]
-    #[test]
-    fn failed_pseudo_probe_adds_issue_without_state() {
-        let backend = FakeBackend {
-            pseudo: Err(err(
-                SourceErrorKind::EntropyUnavailable,
-                "os entropy unavailable",
-            )),
-            ..FakeBackend::default()
-        };
-        let report = discover_with(&backend);
-        assert!(
-            !report
-                .candidates()
-                .iter()
-                .any(|c| matches!(c, SourceCandidate::Pseudo))
-        );
-        assert_eq!(
-            issue_kinds(&report),
-            vec![("pseudo".into(), SourceErrorKind::EntropyUnavailable)]
-        );
-        let debug = format!("{:?}", report.issues()[0].error());
-        assert!(!debug.to_ascii_lowercase().contains("seed"));
     }
 
     #[test]
