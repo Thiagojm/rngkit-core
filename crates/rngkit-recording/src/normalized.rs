@@ -4,8 +4,28 @@ use rngkit_core::{
     Fold, IntervalSeconds, SampleBits, SampleRecord, SessionStatus, SourceId, TimestampProvenance,
     UtcTimestamp,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::native::reader::NativeSession;
+
+/// Format classification for a selected standalone input.
+///
+/// `CurrentCsv` and `LegacyV3Csv` are also used on concatenation preview
+/// entries. `Bin` is valid only for standalone inspection because Combine is
+/// intentionally CSV-only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StandaloneInputFormat {
+    /// Current seven-column native CSV.
+    CurrentCsv,
+    /// Headerless RngKitPSG version 3 CSV.
+    LegacyV3Csv,
+    /// Fixed-size binary samples from a current or legacy stem.
+    Bin,
+}
+
+/// Format classification used by CSV concatenation entries.
+pub type CsvInputFormat = StandaloneInputFormat;
 
 /// Metadata needed to render analysis without re-parsing BIN/CSV.
 #[derive(Debug, Clone, PartialEq, Eq)]

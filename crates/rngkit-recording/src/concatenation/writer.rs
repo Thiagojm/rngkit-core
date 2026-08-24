@@ -13,12 +13,13 @@ use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, UtcOffset};
 
 use super::ConcatenationPreview;
-use crate::concatenation::inspect::{for_each_legacy_csv_row, inspect_legacy_csvs_ordered};
+use crate::concatenation::inspect::{for_each_csv_row, inspect_csv_inputs_ordered};
 use crate::concatenation::manifest::ConcatenationManifest;
 use crate::concatenation::naming::ConcatenationStem;
 use crate::error::RecordingError;
 use crate::fsutil::{join_contained, validate_contained_name};
 use crate::naming::now_local;
+use crate::normalized::StandaloneInputFormat;
 
 /// Derived concatenation CSV columns in order.
 pub const DERIVED_CSV_COLUMNS: [&str; 5] = [
@@ -97,7 +98,38 @@ pub fn create_legacy_csv_concatenation_at(
     local_created: OffsetDateTime,
     local_offset: UtcOffset,
 ) -> Result<PathBuf, RecordingError> {
-    let inspected = inspect_legacy_csvs_ordered(paths)?;
+    create_concatenation_at(paths, output_root, local_created, local_offset, false)
+}
+
+/// Creates a schema-2 derived bundle from current, legacy, or mixed CSV
+/// inputs.
+pub fn create_csv_concatenation(
+    paths: &[PathBuf],
+    output_root: &Path,
+) -> Result<PathBuf, RecordingError> {
+    let (local, offset) = now_local()?;
+    create_csv_concatenation_at(paths, output_root, local, offset)
+}
+
+/// Clock-injectable schema-2 CSV concatenation creation used by tests.
+#[doc(hidden)]
+pub fn create_csv_concatenation_at(
+    paths: &[PathBuf],
+    output_root: &Path,
+    local_created: OffsetDateTime,
+    local_offset: UtcOffset,
+) -> Result<PathBuf, RecordingError> {
+    create_concatenation_at(paths, output_root, local_created, local_offset, true)
+}
+
+fn create_concatenation_at(
+    paths: &[PathBuf],
+    output_root: &Path,
+    local_created: OffsetDateTime,
+    local_offset: UtcOffset,
+    allow_current: bool,
+) -> Result<PathBuf, RecordingError> {
+    let inspected = inspect_csv_inputs_ordered(paths, allow_current)?;
     INSPECT_HOOK.with(|hook| {
         if let Some(hook) = hook.borrow().as_ref() {
             hook();
@@ -183,8 +215,9 @@ fn write_derived_csv(
             .ok_or(RecordingError::ConcatenationCountOverflow)?;
         let mut input_sample_index = 1u64;
         let basename = entry.basename();
+        let format = entry.format().unwrap_or(StandaloneInputFormat::LegacyV3Csv);
         let scan =
-            for_each_legacy_csv_row(path, basename, sample_bits, |timestamp, ones| {
+            for_each_csv_row(path, basename, sample_bits, format, |timestamp, ones| {
                 let captured = timestamp.inner().format(&Rfc3339).map_err(|err| {
                     RecordingError::InvalidName {
                         reason: err.to_string(),
@@ -230,8 +263,16 @@ fn write_manifest(
     created_at: UtcTimestamp,
     local_offset: UtcOffset,
 ) -> Result<(), RecordingError> {
-    let manifest =
-        ConcatenationManifest::new(stem, created_at, local_offset, preview.inputs().to_vec())?;
+    let schema2 = preview
+        .inputs()
+        .first()
+        .and_then(|input| input.format())
+        .is_some();
+    let manifest = if schema2 {
+        ConcatenationManifest::new_csv(stem, created_at, local_offset, preview.inputs().to_vec())?
+    } else {
+        ConcatenationManifest::new(stem, created_at, local_offset, preview.inputs().to_vec())?
+    };
     let bytes = serde_json::to_vec_pretty(&manifest)?;
     let path = staging.join("manifest.json");
     let mut file = OpenOptions::new()

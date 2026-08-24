@@ -104,6 +104,13 @@ pub enum RecordingError {
         /// Input basename.
         basename: String,
     },
+    /// A CSV begins like a current native file but does not have its exact
+    /// seven-column header.
+    #[error("current csv header is invalid in {basename}")]
+    InvalidNativeCsvHeader {
+        /// Input basename.
+        basename: String,
+    },
     /// Concatenation inputs do not share source, bits, interval, or fold.
     #[error("concatenation inputs {left_basename} and {right_basename} have incompatible {field}")]
     IncompatibleConcatenationInputs {

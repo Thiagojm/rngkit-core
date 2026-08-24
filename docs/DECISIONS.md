@@ -109,6 +109,35 @@
 - Impact: `rngkit-recording` owns SHA-256, derived bundles, and
   `open_concatenation`; `rngkit-xlsx` consumes the normalized view
 
+### Standalone and format-neutral CSV inputs (2026-08-24)
+
+- Status: accepted and implemented locally; user validation and publication
+  remain pending
+- Contract:
+  - `open_standalone` detects one current native CSV, legacy v3 CSV, or
+    fixed-size BIN from its exact content and validated filename stem without
+    requiring a manifest
+  - Current CSV requires the exact seven-column native header, contiguous
+    one-based indexes and byte offsets, RFC 3339 timestamps, sample-sized byte
+    lengths, and bounded one-counts. Current standalone source IDs are
+    `bitb`, `trng`, `rdseed`, and `pseudo`
+  - Legacy v3 CSV accepts the observed compact timestamp
+    `YYYYMMDDTHHMMSS,<ones>` and retains the older colon-bearing form for
+    compatibility; v2/space-delimited input remains rejected
+  - A same-stem CSV/BIN pair is validated read-only; standalone BIN timestamps
+    are estimated from the filename start and interval
+  - `inspect_csv_inputs` and `create_csv_concatenation` accept compatible
+    legacy-only, current-only, and mixed CSV sets
+  - New derived manifests use schema 2, kind `csv_concatenation`, and a
+    per-input `current_csv` or `legacy_v3_csv` format. Existing schema-1
+    `legacy_csv_concatenation` manifests remain readable without migration
+  - Legacy-only public wrappers remain restrictive and preserve schema-1
+    behavior. Preview, debug, and manifests contain basenames/hashes only
+- Why: centralize parsing, normalization, compatibility, and provenance before
+  Tauri Reports and Combine integration
+- Impact: no Tauri or source-adapter changes; the application remains pinned to
+  the prior reachable revision until Authorization Gate A
+
 ### MSRV-compatible Excel stack (2026-08-21)
 
 - Status: accepted

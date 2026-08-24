@@ -20,7 +20,9 @@ pub struct LegacyCsvRow {
 
 /// Reads headerless comma-delimited version 3 CSV.
 ///
-/// Expected row: `YYYYMMDDTHH:MM:SS,<ones>`. Space-delimited rows are rejected.
+/// Expected row: `YYYYMMDDTHHMMSS,<ones>`. The older
+/// `YYYYMMDDTHH:MM:SS,<ones>` form remains readable for compatibility.
+/// Space-delimited rows are rejected.
 ///
 /// # Errors
 ///
@@ -103,17 +105,24 @@ pub fn records_from_csv(rows: &[LegacyCsvRow]) -> Result<Vec<SampleRecord>, Reco
 }
 
 pub(crate) fn parse_legacy_timestamp(raw: &str) -> Result<UtcTimestamp, RecordingError> {
-    // Version 3 Python: strftime("%Y%m%dT%H:%M:%S") → 20260821T18:30:00
     let bytes = raw.as_bytes();
-    if bytes.len() != 17
-        || !bytes.iter().enumerate().all(|(i, &b)| match i {
+    let compact = bytes.len() == 15
+        && bytes.iter().enumerate().all(|(i, &b)| {
+            if i == 8 {
+                b == b'T'
+            } else {
+                b.is_ascii_digit()
+            }
+        });
+    let colon = bytes.len() == 17
+        && bytes.iter().enumerate().all(|(i, &b)| match i {
             8 => b == b'T',
             11 | 14 => b == b':',
             _ => b.is_ascii_digit(),
-        })
-    {
+        });
+    if !compact && !colon {
         return Err(RecordingError::InvalidName {
-            reason: format!("expected YYYYMMDDTHH:MM:SS, got {raw}"),
+            reason: format!("expected YYYYMMDDTHHMMSS, got {raw}"),
         });
     }
     let year: i32 = raw[0..4].parse().map_err(|_| RecordingError::InvalidName {
@@ -130,16 +139,22 @@ pub(crate) fn parse_legacy_timestamp(raw: &str) -> Result<UtcTimestamp, Recordin
         .map_err(|_| RecordingError::InvalidName {
             reason: format!("invalid timestamp {raw}"),
         })?;
-    let minute: u8 = raw[12..14]
-        .parse()
-        .map_err(|_| RecordingError::InvalidName {
-            reason: format!("invalid timestamp {raw}"),
-        })?;
-    let second: u8 = raw[15..17]
-        .parse()
-        .map_err(|_| RecordingError::InvalidName {
-            reason: format!("invalid timestamp {raw}"),
-        })?;
+    let minute_start = if compact { 11 } else { 12 };
+    let minute_end = if compact { 13 } else { 14 };
+    let second_start = if compact { 13 } else { 15 };
+    let second_end = if compact { 15 } else { 17 };
+    let minute: u8 =
+        raw[minute_start..minute_end]
+            .parse()
+            .map_err(|_| RecordingError::InvalidName {
+                reason: format!("invalid timestamp {raw}"),
+            })?;
+    let second: u8 =
+        raw[second_start..second_end]
+            .parse()
+            .map_err(|_| RecordingError::InvalidName {
+                reason: format!("invalid timestamp {raw}"),
+            })?;
     let month = Month::try_from(month).map_err(|_| RecordingError::InvalidName {
         reason: format!("invalid timestamp {raw}"),
     })?;
@@ -162,6 +177,7 @@ mod tests {
     #[test]
     fn valid_timestamp_parses() {
         parse_legacy_timestamp("20260821T18:30:00").expect("valid v3 timestamp");
+        parse_legacy_timestamp("20260821T183000").expect("valid compact v3 timestamp");
     }
 
     #[test]

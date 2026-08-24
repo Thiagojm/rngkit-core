@@ -22,11 +22,13 @@
 
 ## In progress
 
-- None.
+- Phase 1 implementation is complete locally and awaits user validation.
+  No commit or push has been made.
 
 ## Next steps
 
-- Authorization gate A: commit and push a reachable `rngkit-core` revision
+- User validation of Phase 1, then Authorization Gate A: commit and push a
+  reachable `rngkit-core` revision
 - After a reachable library revision, start the separate Tauri app (Checkpoint 3)
 
 ## Backlog

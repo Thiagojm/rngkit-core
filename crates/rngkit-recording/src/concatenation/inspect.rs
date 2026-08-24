@@ -6,8 +6,8 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use rngkit_core::{
-    Fold, IntervalSeconds, SOURCE_ID_BITB, SOURCE_ID_PSEUDO, SOURCE_ID_TRNG, SampleBits,
-    SampleIndex, SourceId, UtcTimestamp,
+    Fold, IntervalSeconds, SOURCE_ID_BITB, SOURCE_ID_PSEUDO, SOURCE_ID_RDSEED, SOURCE_ID_TRNG,
+    SampleBits, SampleIndex, SourceId, UtcTimestamp,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -17,6 +17,9 @@ use crate::concatenation::manifest::{ConcatenationInputEntry, ContentSha256, val
 use crate::error::{ConcatenationCompatibilityField, RecordingError};
 use crate::legacy_v3::csv::parse_legacy_timestamp;
 use crate::naming::SessionStem;
+use crate::native::NativeCsvRow;
+use crate::normalized::StandaloneInputFormat;
+use crate::standalone::detect_csv_format;
 
 /// Safe inspect preview: compatibility fields and ordered input metadata.
 ///
@@ -91,12 +94,19 @@ pub(crate) struct OrderedInspection {
 /// decreasing, or overlapping, including equal timestamp boundaries between
 /// files.
 pub fn inspect_legacy_csvs(paths: &[PathBuf]) -> Result<ConcatenationPreview, RecordingError> {
-    Ok(inspect_legacy_csvs_ordered(paths)?.preview)
+    Ok(inspect_csv_inputs_ordered(paths, false)?.preview)
+}
+
+/// Inspects current, legacy, or mixed CSV inputs and returns a normalized
+/// preview without retaining rows or absolute paths.
+pub fn inspect_csv_inputs(paths: &[PathBuf]) -> Result<ConcatenationPreview, RecordingError> {
+    Ok(inspect_csv_inputs_ordered(paths, true)?.preview)
 }
 
 /// Inspects inputs and returns preview metadata with matching ordered paths.
-pub(crate) fn inspect_legacy_csvs_ordered(
+pub(crate) fn inspect_csv_inputs_ordered(
     paths: &[PathBuf],
+    allow_current: bool,
 ) -> Result<OrderedInspection, RecordingError> {
     if paths.is_empty() {
         return Err(RecordingError::EmptyConcatenationInputs);
@@ -124,9 +134,13 @@ pub(crate) fn inspect_legacy_csvs_ordered(
             }
         })?;
         let stem = SessionStem::parse(stem_str)?;
-        validate_legacy_source(stem.source())?;
+        let format = detect_csv_format(path)?;
+        if format == StandaloneInputFormat::CurrentCsv && !allow_current {
+            return Err(RecordingError::NativeConcatenationInput { basename });
+        }
+        validate_source(stem.source(), format)?;
 
-        let inspected = inspect_one_csv(path, &basename, stem.sample_bits())?;
+        let inspected = inspect_one_csv(path, &basename, stem.sample_bits(), format)?;
         match &expected {
             None => {
                 expected = Some(Compatibility {
@@ -142,6 +156,7 @@ pub(crate) fn inspect_legacy_csvs_ordered(
         files.push(InspectedFile {
             path: path.clone(),
             basename,
+            format,
             sha256: inspected.sha256,
             row_count: inspected.row_count,
             first: inspected.first,
@@ -181,15 +196,29 @@ pub(crate) fn inspect_legacy_csvs_ordered(
             .checked_add(1)
             .ok_or(RecordingError::ConcatenationCountOverflow)?;
         ordered_paths.push(file.path);
-        entries.push(ConcatenationInputEntry::new(
-            file.basename,
-            file.sha256,
-            file.row_count,
-            file.first,
-            file.last,
-            output_start,
-            output_end,
-        )?);
+        let entry = if allow_current {
+            ConcatenationInputEntry::new_with_format(
+                file.basename,
+                file.sha256,
+                file.row_count,
+                file.first,
+                file.last,
+                output_start,
+                output_end,
+                file.format,
+            )?
+        } else {
+            ConcatenationInputEntry::new(
+                file.basename,
+                file.sha256,
+                file.row_count,
+                file.first,
+                file.last,
+                output_start,
+                output_end,
+            )?
+        };
+        entries.push(entry);
     }
 
     let Some(compat) = expected else {
@@ -219,6 +248,7 @@ struct Compatibility {
 struct InspectedFile {
     path: PathBuf,
     basename: String,
+    format: StandaloneInputFormat,
     sha256: ContentSha256,
     row_count: u64,
     first: UtcTimestamp,
@@ -251,8 +281,131 @@ fn inspect_one_csv(
     path: &Path,
     basename: &str,
     sample_bits: SampleBits,
+    format: StandaloneInputFormat,
 ) -> Result<RowScan, RecordingError> {
-    for_each_legacy_csv_row(path, basename, sample_bits, |_timestamp, _ones| Ok(()))
+    for_each_csv_row(path, basename, sample_bits, format, |_timestamp, _ones| {
+        Ok(())
+    })
+}
+
+/// Streams either supported CSV representation, hashing raw bytes and
+/// visiting normalized timestamp/one-count pairs.
+pub(crate) fn for_each_csv_row(
+    path: &Path,
+    basename: &str,
+    sample_bits: SampleBits,
+    format: StandaloneInputFormat,
+    visit: impl FnMut(UtcTimestamp, u64) -> Result<(), RecordingError>,
+) -> Result<RowScan, RecordingError> {
+    match format {
+        StandaloneInputFormat::LegacyV3Csv => {
+            for_each_legacy_csv_row(path, basename, sample_bits, visit)
+        }
+        StandaloneInputFormat::CurrentCsv => {
+            for_each_current_csv_row(path, basename, sample_bits, visit)
+        }
+        StandaloneInputFormat::Bin => Err(RecordingError::ConcatenationInputNotCsv {
+            basename: basename.to_owned(),
+        }),
+    }
+}
+
+fn for_each_current_csv_row(
+    path: &Path,
+    basename: &str,
+    sample_bits: SampleBits,
+    mut visit: impl FnMut(UtcTimestamp, u64) -> Result<(), RecordingError>,
+) -> Result<RowScan, RecordingError> {
+    let file = File::open(path)?;
+    let mut hashing = HashingReader {
+        inner: file,
+        hasher: Sha256::new(),
+    };
+    let mut csv = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(&mut hashing);
+    let headers = csv.headers()?;
+    let expected: Vec<&str> = NATIVE_CSV_COLUMNS.to_vec();
+    let observed: Vec<&str> = headers.iter().collect();
+    if observed != expected {
+        return Err(RecordingError::InvalidNativeCsvHeader {
+            basename: basename.to_owned(),
+        });
+    }
+    let sample_bytes =
+        u64::try_from(sample_bits.bytes()?).map_err(|_| RecordingError::Corrupt {
+            reason: "sample byte length does not fit in u64".into(),
+        })?;
+    let mut first = None;
+    let mut last = None;
+    let mut prev = None;
+    let mut row_count = 0u64;
+    let mut expected_index = 1u64;
+    let mut expected_offset = 0u64;
+    for row in csv.deserialize::<NativeCsvRow>() {
+        let row = row?;
+        if row.sample_index != expected_index || row.byte_offset != expected_offset {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "current csv indexes or offsets are not contiguous at row {}",
+                    row_count + 1
+                ),
+            });
+        }
+        if u64::from(row.byte_length) != sample_bytes {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "byte_length {} does not match sample size {sample_bytes}",
+                    row.byte_length
+                ),
+            });
+        }
+        if row.ones > u64::from(sample_bits.get()) {
+            return Err(RecordingError::OnesExceedSampleBits {
+                ones: row.ones,
+                sample_bits: sample_bits.get(),
+            });
+        }
+        let timestamp = row.to_record()?.timestamp;
+        if let Some(previous) = prev {
+            if timestamp < previous {
+                return Err(RecordingError::DecreasingConcatenationTimestamp {
+                    basename: basename.to_owned(),
+                });
+            }
+        }
+        visit(timestamp, row.ones)?;
+        first.get_or_insert(timestamp);
+        last = Some(timestamp);
+        prev = Some(timestamp);
+        row_count = row_count
+            .checked_add(1)
+            .ok_or(RecordingError::ConcatenationCountOverflow)?;
+        expected_index = expected_index
+            .checked_add(1)
+            .ok_or(RecordingError::ConcatenationCountOverflow)?;
+        expected_offset = row
+            .byte_offset
+            .checked_add(u64::from(row.byte_length))
+            .ok_or_else(|| RecordingError::Corrupt {
+                reason: "byte range overflow".into(),
+            })?;
+    }
+    let first = first.ok_or_else(|| RecordingError::EmptyConcatenationInput {
+        basename: basename.to_owned(),
+    })?;
+    let last = last.ok_or_else(|| RecordingError::EmptyConcatenationInput {
+        basename: basename.to_owned(),
+    })?;
+    let digest = hashing.hasher.finalize();
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(digest.as_ref());
+    Ok(RowScan {
+        sha256: ContentSha256::from_bytes(&bytes),
+        row_count,
+        first,
+        last,
+    })
 }
 
 /// Streams one legacy CSV, hashing raw bytes and visiting each data row.
@@ -282,7 +435,7 @@ pub(crate) fn for_each_legacy_csv_row(
             if trimmed.is_empty() {
                 continue;
             }
-            if row_count == 0 && is_native_header(trimmed) {
+            if row_count == 0 && trimmed == NATIVE_CSV_COLUMNS.join(",") {
                 return Err(RecordingError::NativeConcatenationInput {
                     basename: basename.to_owned(),
                 });
@@ -367,24 +520,37 @@ fn parse_legacy_csv_line(
     Ok((timestamp, ones))
 }
 
-fn is_native_header(line: &str) -> bool {
-    let mut parts = line.split(',');
-    NATIVE_CSV_COLUMNS
-        .iter()
-        .all(|column| parts.next() == Some(*column))
-        && parts.next().is_none()
-}
-
-fn validate_legacy_source(source: &SourceId) -> Result<(), RecordingError> {
-    if !matches!(
-        source.as_str(),
-        SOURCE_ID_BITB | SOURCE_ID_TRNG | SOURCE_ID_PSEUDO
-    ) {
+fn validate_source(source: &SourceId, format: StandaloneInputFormat) -> Result<(), RecordingError> {
+    let supported = match format {
+        StandaloneInputFormat::LegacyV3Csv => {
+            matches!(
+                source.as_str(),
+                SOURCE_ID_BITB | SOURCE_ID_TRNG | SOURCE_ID_PSEUDO
+            )
+        }
+        StandaloneInputFormat::CurrentCsv => matches!(
+            source.as_str(),
+            SOURCE_ID_BITB | SOURCE_ID_TRNG | SOURCE_ID_RDSEED | SOURCE_ID_PSEUDO
+        ),
+        StandaloneInputFormat::Bin => false,
+    };
+    if !supported {
         return Err(RecordingError::UnsupportedVersion {
-            reason: format!("legacy v3 does not include source {source}"),
+            reason: format!(
+                "standalone {} does not include source {source}",
+                format_name(format)
+            ),
         });
     }
     Ok(())
+}
+
+fn format_name(format: StandaloneInputFormat) -> &'static str {
+    match format {
+        StandaloneInputFormat::CurrentCsv => "current csv",
+        StandaloneInputFormat::LegacyV3Csv => "legacy v3 csv",
+        StandaloneInputFormat::Bin => "bin",
+    }
 }
 
 fn check_compat(

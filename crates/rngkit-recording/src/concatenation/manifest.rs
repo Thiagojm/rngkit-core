@@ -8,12 +8,19 @@ use time::UtcOffset;
 
 use crate::concatenation::naming::ConcatenationStem;
 use crate::error::RecordingError;
+use crate::normalized::StandaloneInputFormat;
 
 /// Concatenation manifest schema version implemented by this crate.
 pub const CONCATENATION_SCHEMA_VERSION: u32 = 1;
 
 /// Artifact kind stored in a concatenation manifest.
 pub const CONCATENATION_KIND: &str = "legacy_csv_concatenation";
+
+/// Current schema version for format-neutral CSV concatenation bundles.
+pub const CSV_CONCATENATION_SCHEMA_VERSION: u32 = 2;
+
+/// Artifact kind stored in a current CSV concatenation manifest.
+pub const CSV_CONCATENATION_KIND: &str = "csv_concatenation";
 
 /// Lowercase hex SHA-256 of an input file's bytes.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +98,8 @@ pub struct ConcatenationInputEntry {
     last_timestamp: UtcTimestamp,
     output_start: SampleIndex,
     output_end: SampleIndex,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    format: Option<StandaloneInputFormat>,
 }
 
 impl ConcatenationInputEntry {
@@ -123,8 +132,42 @@ impl ConcatenationInputEntry {
             last_timestamp,
             output_start,
             output_end,
+            format: None,
         };
         entry.validate()?;
+        Ok(entry)
+    }
+
+    /// Builds an input entry with a current or legacy CSV format label.
+    ///
+    /// The format is serialized in schema-2 manifests and omitted from the
+    /// compatibility schema-1 representation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_format(
+        basename: String,
+        sha256: ContentSha256,
+        row_count: u64,
+        first_timestamp: UtcTimestamp,
+        last_timestamp: UtcTimestamp,
+        output_start: SampleIndex,
+        output_end: SampleIndex,
+        format: StandaloneInputFormat,
+    ) -> Result<Self, RecordingError> {
+        if format == StandaloneInputFormat::Bin {
+            return Err(RecordingError::InvalidName {
+                reason: "concatenation inputs must be csv formats".into(),
+            });
+        }
+        let mut entry = Self::new(
+            basename,
+            sha256,
+            row_count,
+            first_timestamp,
+            last_timestamp,
+            output_start,
+            output_end,
+        )?;
+        entry.format = Some(format);
         Ok(entry)
     }
 
@@ -190,6 +233,12 @@ impl ConcatenationInputEntry {
     pub fn output_end(&self) -> SampleIndex {
         self.output_end
     }
+
+    /// CSV format, when this entry belongs to a schema-2 manifest.
+    #[must_use]
+    pub fn format(&self) -> Option<StandaloneInputFormat> {
+        self.format
+    }
 }
 
 /// Schema-version-1 concatenation manifest.
@@ -243,6 +292,33 @@ impl ConcatenationManifest {
         Ok(manifest)
     }
 
+    /// Builds a schema-2 format-neutral CSV concatenation manifest.
+    ///
+    /// Every input must carry a current or legacy CSV format label.
+    pub fn new_csv(
+        stem: &ConcatenationStem,
+        created_at: UtcTimestamp,
+        local_offset: UtcOffset,
+        inputs: Vec<ConcatenationInputEntry>,
+    ) -> Result<Self, RecordingError> {
+        let mut manifest = Self {
+            schema_version: CSV_CONCATENATION_SCHEMA_VERSION,
+            kind: CSV_CONCATENATION_KIND.to_owned(),
+            stem: stem.as_str().to_owned(),
+            source_id: stem.source().clone(),
+            sample_bits: stem.sample_bits(),
+            interval_seconds: stem.interval(),
+            fold: stem.fold(),
+            created_at_utc: created_at,
+            local_utc_offset: format_offset(local_offset),
+            csv_file: stem.csv_basename(),
+            total_rows: 0,
+            inputs,
+        };
+        manifest.total_rows = manifest.validate_contents()?;
+        Ok(manifest)
+    }
+
     /// Parses JSON and rejects unknown schema versions and kinds.
     ///
     /// # Errors
@@ -260,12 +336,16 @@ impl ConcatenationManifest {
     }
 
     fn validate_contents(&self) -> Result<u64, RecordingError> {
-        if self.schema_version != CONCATENATION_SCHEMA_VERSION {
-            return Err(RecordingError::UnsupportedSchema {
-                version: self.schema_version,
-            });
-        }
-        if self.kind != CONCATENATION_KIND {
+        let schema1 =
+            self.schema_version == CONCATENATION_SCHEMA_VERSION && self.kind == CONCATENATION_KIND;
+        let schema2 = self.schema_version == CSV_CONCATENATION_SCHEMA_VERSION
+            && self.kind == CSV_CONCATENATION_KIND;
+        if !schema1 && !schema2 {
+            if self.schema_version != CONCATENATION_SCHEMA_VERSION {
+                return Err(RecordingError::UnsupportedSchema {
+                    version: self.schema_version,
+                });
+            }
             return Err(RecordingError::UnsupportedConcatenationKind {
                 kind: self.kind.clone(),
             });
@@ -304,6 +384,21 @@ impl ConcatenationManifest {
         let mut prev_last: Option<(UtcTimestamp, &str)> = None;
         for input in &self.inputs {
             input.validate()?;
+            if schema1 && input.format.is_some() {
+                return Err(RecordingError::Corrupt {
+                    reason: "schema-1 concatenation input unexpectedly has a format".into(),
+                });
+            }
+            if schema2
+                && !matches!(
+                    input.format,
+                    Some(StandaloneInputFormat::CurrentCsv | StandaloneInputFormat::LegacyV3Csv)
+                )
+            {
+                return Err(RecordingError::Corrupt {
+                    reason: "schema-2 concatenation input is missing a csv format".into(),
+                });
+            }
             if input.output_start.get() != expected_start {
                 return Err(RecordingError::InconsistentConcatenationRange);
             }

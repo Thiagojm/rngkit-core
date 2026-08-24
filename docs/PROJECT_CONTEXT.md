@@ -14,14 +14,16 @@ descriptive cumulative statistics, and can export an Excel report.
 2. Open that source through `rngkit-sources` / `EntropySource`.
 3. Run `rngkit-engine` until cancellation or a terminal error.
 4. Persist a native directory: `<stem>.bin`, `<stem>.csv`, `manifest.json`.
-5. Read native bundles or RngKitPSG v3 files through normalized records.
+5. Read native bundles, standalone current CSV/BIN files, or RngKitPSG v3
+   files through normalized records.
 6. Analyze incrementally or in batch with the same accumulator.
 7. Export `<stem>.xlsx` with Summary, Samples, and a descriptive Z chart.
-8. Inspect compatible legacy v3 CSVs with `inspect_legacy_csvs` for a derived
-   concatenation preview (basenames and SHA-256, no absolute paths).
-9. Create a derived concatenation bundle with
-   `create_legacy_csv_concatenation`, reopen it with `open_concatenation`, and
-   export XLSX through `derived_report_path` / `write_report`.
+8. Inspect compatible current/legacy CSVs with `inspect_csv_inputs` for a
+   derived concatenation preview (format labels, basenames, and SHA-256, no
+   absolute paths).
+9. Create a schema-2 derived concatenation bundle with
+   `create_csv_concatenation`, reopen it with `open_concatenation`, and export
+   XLSX through `derived_report_path` / `write_report`.
 
 ## Domain terms
 
@@ -49,12 +51,19 @@ descriptive cumulative statistics, and can export an Excel report.
 - Event-sink and completed-manifest failures finalize the session as failed and keep the primary error
 - XLSX uses a unique create-new temp; `ErrorIfExists` must not replace a concurrent destination
 - Legacy BIN import streams one sample at a time; CSV one-counts cannot exceed sample bits
-- Derived concatenation inspects distinct nonempty legacy v3 CSVs with matching
-  source/bits/interval/fold; equal timestamps are allowed inside one file and
-  rejected as overlap between files; previews never persist absolute input paths
-- Derived creation reopens and revalidates inputs, streams a same-stem CSV plus
-  `manifest.json` through unique staging, and promotes with atomic no-replace
-  semantics on Windows and supported Unix targets; unsupported Unix targets
-  fail closed. Inputs are not mutated; readers validate contained CSV, ranges,
-  and one-count bounds
+- Standalone current CSVs use the exact native seven-column header and validate
+   contiguous indexes, RFC 3339 timestamps, byte lengths/offsets, and
+   one-count bounds. Current standalone inputs support `bitb`, `trng`, `rdseed`,
+   and `pseudo`; headerless legacy CSV remains limited to `bitb`, `trng`, and
+   `pseudo`. Same-stem CSV/BIN pairs are checked read-only
+- Derived concatenation can inspect distinct nonempty current, legacy, or mixed
+   CSVs with matching source/bits/interval/fold; equal timestamps are allowed
+   inside one file and rejected as overlap between files; previews never
+   persist absolute input paths
+- New derived creation reopens and revalidates inputs, streams a same-stem CSV
+   plus `manifest.json` through unique staging, and promotes with atomic
+   no-replace semantics on Windows and supported Unix targets; unsupported Unix
+   targets fail closed. Inputs are not mutated; readers validate contained CSV,
+   ranges, and one-count bounds. New bundles use schema 2 with per-input format;
+   schema-1 legacy bundles remain readable
 - Derived report paths stay inside the validated bundle directory

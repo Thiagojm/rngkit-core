@@ -1,10 +1,10 @@
 //! Streaming native session reader.
 
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use rngkit_core::{SampleRecord, count_ones};
+use rngkit_core::{SampleBits, SampleRecord, count_ones};
 
 use crate::consistency::{ConsistencyReport, ConsistencyWarning};
 use crate::error::RecordingError;
@@ -175,6 +175,89 @@ impl NativeSession {
     pub fn bin_path(&self) -> &Path {
         &self.bin_path
     }
+}
+
+/// Reads a current seven-column CSV without requiring a native manifest.
+///
+/// The filename stem supplies the sample size and the row stream is checked
+/// for contiguous indexes, offsets, byte lengths, timestamps, and one-count
+/// bounds. This is intentionally separate from [`NativeSession::open`], which
+/// also validates a containing manifest and BIN artifact.
+pub(crate) fn read_current_csv(
+    path: &Path,
+    sample_bits: SampleBits,
+) -> Result<Vec<SampleRecord>, RecordingError> {
+    let file = File::open(path)?;
+    let mut csv = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(BufReader::new(file));
+    let headers = csv.headers()?;
+    let expected: Vec<&str> = crate::NATIVE_CSV_COLUMNS.to_vec();
+    let observed: Vec<&str> = headers.iter().collect();
+    if observed != expected {
+        return Err(RecordingError::InvalidNativeCsvHeader {
+            basename: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("input.csv")
+                .to_owned(),
+        });
+    }
+
+    let sample_bytes =
+        u64::try_from(sample_bits.bytes()?).map_err(|_| RecordingError::Corrupt {
+            reason: "sample byte length does not fit in u64".into(),
+        })?;
+    let mut records = Vec::new();
+    let mut expected_index = 1u64;
+    let mut expected_offset = 0u64;
+    for row in csv.deserialize::<NativeCsvRow>() {
+        let row = row?;
+        if row.sample_index != expected_index {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "sample_index {} is not contiguous (expected {expected_index})",
+                    row.sample_index
+                ),
+            });
+        }
+        if row.byte_offset != expected_offset {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "byte_offset {} is not contiguous (expected {expected_offset})",
+                    row.byte_offset
+                ),
+            });
+        }
+        if u64::from(row.byte_length) != sample_bytes {
+            return Err(RecordingError::Corrupt {
+                reason: format!(
+                    "byte_length {} does not match sample size {sample_bytes}",
+                    row.byte_length
+                ),
+            });
+        }
+        if row.ones > u64::from(sample_bits.get()) {
+            return Err(RecordingError::OnesExceedSampleBits {
+                ones: row.ones,
+                sample_bits: sample_bits.get(),
+            });
+        }
+        let end = row
+            .byte_offset
+            .checked_add(u64::from(row.byte_length))
+            .ok_or_else(|| RecordingError::Corrupt {
+                reason: "byte range overflow".into(),
+            })?;
+        records.push(row.to_record()?);
+        expected_index = expected_index
+            .checked_add(1)
+            .ok_or_else(|| RecordingError::Corrupt {
+                reason: "sample index overflow".into(),
+            })?;
+        expected_offset = end;
+    }
+    Ok(records)
 }
 
 /// Iterator that seeks and reads one committed sample at a time.
