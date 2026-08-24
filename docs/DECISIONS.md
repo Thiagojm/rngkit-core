@@ -111,8 +111,7 @@
 
 ### Standalone and format-neutral CSV inputs (2026-08-24)
 
-- Status: accepted and implemented locally; user validation and publication
-  remain pending
+- Status: accepted, implemented, and validated; publication authorized
 - Contract:
   - `open_standalone` detects one current native CSV, legacy v3 CSV, or
     fixed-size BIN from its exact content and validated filename stem without
@@ -135,8 +134,8 @@
     behavior. Preview, debug, and manifests contain basenames/hashes only
 - Why: centralize parsing, normalization, compatibility, and provenance before
   Tauri Reports and Combine integration
-- Impact: no Tauri or source-adapter changes; the application remains pinned to
-  the prior reachable revision until Authorization Gate A
+- Impact: no Tauri or source-adapter changes; application integration remains a
+  separately authorized phase and must use an exact reachable revision
 
 ### MSRV-compatible Excel stack (2026-08-21)
 

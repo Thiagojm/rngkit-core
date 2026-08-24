@@ -67,3 +67,12 @@ descriptive cumulative statistics, and can export an Excel report.
    ranges, and one-count bounds. New bundles use schema 2 with per-input format;
    schema-1 legacy bundles remain readable
 - Derived report paths stay inside the validated bundle directory
+
+## Current validation evidence
+
+- Phase 1 standalone and format-neutral CSV support passed the complete
+  deterministic workspace suite on Windows with stable Rust and Rust 1.85 on
+  2026-08-24. This includes XLSX generation from standalone legacy CSV,
+  current CSV, BIN, schema-1 concatenation, and schema-2 concatenation inputs.
+- The four opt-in physical hardware tests were not run during that validation;
+  the default suite confirmed that they remain ignored.

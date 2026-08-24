@@ -19,17 +19,18 @@
 - Derived concatenation inspect/create/`open_concatenation`/XLSX (Checkpoints
   1–2), validated on Windows stable and Rust 1.85; the Unix no-replace branch
   also checks and passes Clippy for `aarch64-unknown-linux-gnu`
+- Format-neutral standalone legacy CSV/current CSV/BIN readers and schema-2
+  current/legacy/mixed CSV concatenation, including normalized XLSX generation,
+  validated on Windows stable and Rust 1.85
 
 ## In progress
 
-- Phase 1 implementation is complete locally and awaits user validation.
-  No commit or push has been made.
+- No implementation phase is currently authorized.
 
 ## Next steps
 
-- User validation of Phase 1, then Authorization Gate A: commit and push a
-  reachable `rngkit-core` revision
-- After a reachable library revision, start the separate Tauri app (Checkpoint 3)
+- Use the reachable Phase 1 `rngkit-core` revision in the separate Tauri app
+  only after explicit Phase 2 authorization
 
 ## Backlog
 

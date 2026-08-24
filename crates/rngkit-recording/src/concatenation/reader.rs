@@ -4,8 +4,8 @@ use std::fs;
 use std::path::Path;
 
 use rngkit_core::{
-    SOURCE_ID_BITB, SOURCE_ID_PSEUDO, SOURCE_ID_TRNG, SampleIndex, SampleRecord, SessionStatus,
-    TimestampProvenance, UtcTimestamp,
+    SOURCE_ID_BITB, SOURCE_ID_PSEUDO, SOURCE_ID_RDSEED, SOURCE_ID_TRNG, SampleIndex, SampleRecord,
+    SessionStatus, TimestampProvenance, UtcTimestamp,
 };
 use time::format_description::well_known::Rfc3339;
 
@@ -146,6 +146,7 @@ pub(crate) fn concatenation_source_label(id: &str) -> String {
     match id {
         SOURCE_ID_BITB => "BitBabbler".into(),
         SOURCE_ID_TRNG => "TrueRNG v1/v2/v3".into(),
+        SOURCE_ID_RDSEED => "RDSEED".into(),
         SOURCE_ID_PSEUDO => "PseudoRNG".into(),
         other => other.into(),
     }

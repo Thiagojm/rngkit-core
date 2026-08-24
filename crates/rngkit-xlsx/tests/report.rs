@@ -8,8 +8,8 @@ use rngkit_core::{
     TimestampProvenance, UtcTimestamp,
 };
 use rngkit_recording::{
-    ConcatenationStem, NormalizedMeta, NormalizedSession, SessionStem,
-    create_legacy_csv_concatenation_at, open_concatenation,
+    ConcatenationStem, NormalizedMeta, NormalizedSession, SessionStem, create_csv_concatenation_at,
+    create_legacy_csv_concatenation_at, open_concatenation, open_standalone,
 };
 use rngkit_xlsx::{
     EXCEL_MAX_SAMPLE_ROWS, Overwrite, REF_MINUS, REF_PLUS, SAMPLES_SHEET, SUMMARY_SHEET, XlsxError,
@@ -341,4 +341,67 @@ fn derived_report_matches_ordered_concatenation_rows() {
     assert_eq!(ones, vec![8, 8, 4, 4]);
     assert_eq!(std::fs::read(&earlier).unwrap(), earlier_bytes);
     assert_eq!(std::fs::read(&later).unwrap(), later_bytes);
+}
+
+#[test]
+fn standalone_legacy_current_and_bin_inputs_generate_reports() {
+    let dir = tempdir().unwrap();
+    let cases = [
+        (
+            "20260824T145947_bitb_s16_i1_f0.csv",
+            b"20260824T145948,8\n".as_slice(),
+        ),
+        (
+            "20260824T145947_pseudo_s16_i1.csv",
+            b"sample_index,captured_at_utc,elapsed_ms,acquisition_ms,ones,byte_offset,byte_length\n1,2026-08-24T14:59:48Z,1000,2,7,0,2\n"
+                .as_slice(),
+        ),
+        (
+            "20260824T145947_rdseed_s16_i1.bin",
+            b"\xff\x00".as_slice(),
+        ),
+    ];
+
+    for (index, (basename, contents)) in cases.into_iter().enumerate() {
+        let input = dir.path().join(basename);
+        std::fs::write(&input, contents).unwrap();
+        let session = open_standalone(&input).unwrap();
+        let report = dir.path().join(format!("standalone-{index}.xlsx"));
+        write_report(&session, &report, Overwrite::ErrorIfExists).unwrap();
+
+        let mut wb: Xlsx<_> = open_workbook(&report).unwrap();
+        let samples = wb.worksheet_range(SAMPLES_SHEET).unwrap();
+        assert_eq!(samples.rows().count(), 2, "{basename}");
+    }
+}
+
+#[test]
+fn schema_two_derived_bundle_generates_report() {
+    let dir = tempdir().unwrap();
+    let legacy = dir.path().join("20260824T145947_trng_s16_i1.csv");
+    let current = dir.path().join("20260824T145950_trng_s16_i1.csv");
+    std::fs::write(&legacy, "20260824T145948,8\n20260824T145949,7\n").unwrap();
+    std::fs::write(
+        &current,
+        "sample_index,captured_at_utc,elapsed_ms,acquisition_ms,ones,byte_offset,byte_length\n1,2026-08-24T14:59:50Z,1000,2,6,0,2\n",
+    )
+    .unwrap();
+    let date = time::Date::from_calendar_date(2026, time::Month::August, 24).unwrap();
+    let clock = time::Time::from_hms(15, 0, 0).unwrap();
+    let local = time::PrimitiveDateTime::new(date, clock).assume_utc();
+    let bundle = create_csv_concatenation_at(
+        &[current, legacy],
+        &dir.path().join("out"),
+        local,
+        time::UtcOffset::UTC,
+    )
+    .unwrap();
+    let session = open_concatenation(&bundle).unwrap();
+    let stem = ConcatenationStem::parse(&session.meta().stem).unwrap();
+    let report = derived_report_path(&bundle, &stem).unwrap();
+    write_report(&session, &report, Overwrite::ErrorIfExists).unwrap();
+
+    let mut wb: Xlsx<_> = open_workbook(&report).unwrap();
+    let samples = wb.worksheet_range(SAMPLES_SHEET).unwrap();
+    assert_eq!(samples.rows().count(), 4);
 }

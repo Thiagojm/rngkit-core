@@ -112,3 +112,18 @@ fn generic_inspection_rejects_bin_and_overlapping_mixed_ranges() {
         Err(rngkit_recording::RecordingError::OverlappingConcatenationRanges { .. })
     ));
 }
+
+#[test]
+fn current_rdseed_concatenation_keeps_the_friendly_source_label() {
+    let dir = tempdir().unwrap();
+    let current = write(
+        &dir.path().join("20260824T145950_rdseed_s16_i1.csv"),
+        &format!("{HEADER}1,2026-08-24T14:59:50Z,1000,2,6,0,2\n"),
+    );
+    let bundle =
+        create_csv_concatenation_at(&[current], &dir.path().join("out"), local(), UtcOffset::UTC)
+            .unwrap();
+
+    let session = open_concatenation(bundle).unwrap();
+    assert_eq!(session.meta().source_label, "RDSEED");
+}
