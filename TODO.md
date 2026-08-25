@@ -28,6 +28,9 @@
 - Local-clock chart labels use manifest offsets, infer current standalone CSV
   offsets from canonical filenames, preserve legacy clocks, and pass the
   complete stable/MSRV validation suite.
+- Explicitly selected report basenames remain authoritative even when a `.bin`
+  is normalized through a valid recorded CSV sibling; stable/MSRV validation
+  passed.
 
 ## In progress
 

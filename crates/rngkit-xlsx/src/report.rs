@@ -87,11 +87,22 @@ impl ReportOptions {
             TimestampProvenance::Recorded => "csv",
             TimestampProvenance::Estimated => "bin",
         };
+        Self::for_session_with_source_basename(
+            session,
+            format!("{}.{}", session.meta().stem, extension),
+        )
+    }
+
+    /// Creates compatible chart defaults while retaining the selected source basename.
+    pub fn for_session_with_source_basename(
+        session: &NormalizedSession,
+        source_basename: impl Into<String>,
+    ) -> Result<Self, XlsxError> {
         let mode = match session.meta().provenance {
             TimestampProvenance::Recorded => ChartXAxisMode::RecordedTimestamp,
             TimestampProvenance::Estimated => ChartXAxisMode::SampleIndex,
         };
-        let mut options = Self::new(format!("{}.{}", session.meta().stem, extension), mode)?;
+        let mut options = Self::new(source_basename, mode)?;
         if mode == ChartXAxisMode::RecordedTimestamp
             && ConcatenationStem::parse(&session.meta().stem).is_err()
         {

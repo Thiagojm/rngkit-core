@@ -99,3 +99,8 @@ descriptive cumulative statistics, and can export an Excel report.
   manifest offset conversion, filename inference for manifest-free current
   CSV, unchanged legacy clocks, and the BIN/index boundary. Native Excel
   inspection remains unverified.
+- **Selected-basename correction (2026-08-25):** `ReportOptions` can retain the
+  explicitly selected `.bin` basename while still deriving recorded-time mode
+  and local-clock context from a valid sibling CSV. Focused XLSX tests and the
+  complete stable/MSRV workspace matrix passed locally; physical hardware tests
+  remained ignored.

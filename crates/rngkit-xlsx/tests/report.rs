@@ -238,6 +238,62 @@ fn recorded_chart_uses_manifest_local_offset() {
 }
 
 #[test]
+fn selected_basename_is_retained_with_session_clock_context() {
+    let captured = time::OffsetDateTime::parse("2026-08-24T17:59:48Z", &Rfc3339).unwrap();
+    let session = NormalizedSession::from_parts(
+        NormalizedMeta {
+            stem: "20260824T145947_pseudo_s16_i1".into(),
+            source_id: SourceId::pseudo(),
+            source_label: "PseudoRNG".into(),
+            source_variant: None,
+            fold: None,
+            sample_bits: SampleBits::new(16).unwrap(),
+            interval: IntervalSeconds::new(1).unwrap(),
+            started_at: Some(UtcTimestamp::new(captured)),
+            completed_at: Some(UtcTimestamp::new(captured)),
+            status: SessionStatus::Completed,
+            overrun_count: Some(0),
+            provenance: TimestampProvenance::Recorded,
+            local_utc_offset: Some("-03:00".into()),
+        },
+        vec![SampleRecord {
+            index: SampleIndex::new(1).unwrap(),
+            timestamp: UtcTimestamp::new(captured),
+            provenance: TimestampProvenance::Recorded,
+            elapsed: Some(std::time::Duration::from_secs(1)),
+            acquisition: Some(std::time::Duration::from_millis(2)),
+            ones: 8,
+            byte_offset: None,
+            byte_length: None,
+        }],
+    );
+
+    let options = ReportOptions::for_session_with_source_basename(
+        &session,
+        "20260824T145947_pseudo_s16_i1.bin",
+    )
+    .unwrap();
+    assert_eq!(
+        options.source_basename(),
+        "20260824T145947_pseudo_s16_i1.bin"
+    );
+    assert_eq!(options.x_axis_mode(), ChartXAxisMode::RecordedTimestamp);
+
+    let dir = tempdir().unwrap();
+    let dest = dir.path().join("selected-bin.xlsx");
+    write_report_with_options(&session, &dest, Overwrite::ErrorIfExists, &options).unwrap();
+    let xml = chart_xml(&dest);
+    assert!(xml.contains("20260824T145947_pseudo_s16_i1.bin"));
+
+    let mut wb: Xlsx<_> = open_workbook(&dest).unwrap();
+    let samples = wb.worksheet_range(SAMPLES_SHEET).unwrap();
+    assert_eq!(
+        samples.get_value((1, 11)),
+        Some(&Data::String("14:59:48".into()))
+    );
+}
+
+#[test]
 fn report_options_reject_paths_and_unsupported_extensions() {
     assert!(ReportOptions::new("..\\secret.csv", ChartXAxisMode::SampleIndex).is_err());
     assert!(ReportOptions::new("report.xlsx", ChartXAxisMode::SampleIndex).is_err());
