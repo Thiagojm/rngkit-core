@@ -76,6 +76,10 @@ descriptive cumulative statistics, and can export an Excel report.
 - XLSX report presentation accepts an explicit safe source basename and axis
   mode. Recorded-time charts use hidden `HH:mm:ss` categories while BIN-only
   charts use sample indexes; title and axis copy remains descriptive
+- Recorded-time chart labels use a native manifest's captured local UTC offset.
+  Without a manifest, current CSVs infer that offset from the canonical local
+  filename start versus the first UTC row; legacy CSV clocks remain unshifted.
+  Full normalized timestamps are preserved in the Samples sheet
 
 ## Current validation evidence
 
@@ -90,3 +94,8 @@ descriptive cumulative statistics, and can export an Excel report.
   complete Rust 1.85 check/test validation passed locally. The library remains
   at its existing reachable baseline because commit, push, and publication are
   separate approvals. Optional Excel rendering review remains unverified.
+- **Local clock correction (2026-08-25):** focused XLSX tests and the complete
+  stable workspace format/check/test/clippy suite passed locally. Tests cover
+  manifest offset conversion, filename inference for manifest-free current
+  CSV, unchanged legacy clocks, and the BIN/index boundary. Native Excel
+  inspection remains unverified.

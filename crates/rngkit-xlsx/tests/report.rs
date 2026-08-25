@@ -17,6 +17,7 @@ use rngkit_xlsx::{
     with_report_promote_hook, with_workbook_write_failure, write_report, write_report_with_options,
 };
 use tempfile::tempdir;
+use time::format_description::well_known::Rfc3339;
 use zip::ZipArchive;
 
 fn session_with(ones: &[u64]) -> NormalizedSession {
@@ -186,6 +187,53 @@ fn explicit_chart_context_controls_title_axes_and_categories() {
     assert!(
         bin_xml.contains("$A$2:$A$4"),
         "index categories must use sample index column"
+    );
+}
+
+#[test]
+fn recorded_chart_uses_manifest_local_offset() {
+    let dir = tempdir().unwrap();
+    let dest = dir.path().join("local-clock.xlsx");
+    let captured = time::OffsetDateTime::parse("2026-08-24T17:59:48Z", &Rfc3339).unwrap();
+    let session = NormalizedSession::from_parts(
+        NormalizedMeta {
+            stem: "20260824T145947_pseudo_s16_i1".into(),
+            source_id: SourceId::pseudo(),
+            source_label: "PseudoRNG".into(),
+            source_variant: None,
+            fold: None,
+            sample_bits: SampleBits::new(16).unwrap(),
+            interval: IntervalSeconds::new(1).unwrap(),
+            started_at: Some(UtcTimestamp::new(captured)),
+            completed_at: Some(UtcTimestamp::new(captured)),
+            status: SessionStatus::Completed,
+            overrun_count: Some(0),
+            provenance: TimestampProvenance::Recorded,
+            local_utc_offset: Some("-03:00".into()),
+        },
+        vec![SampleRecord {
+            index: SampleIndex::new(1).unwrap(),
+            timestamp: UtcTimestamp::new(captured),
+            provenance: TimestampProvenance::Recorded,
+            elapsed: Some(std::time::Duration::from_secs(1)),
+            acquisition: Some(std::time::Duration::from_millis(2)),
+            ones: 8,
+            byte_offset: None,
+            byte_length: None,
+        }],
+    );
+
+    write_report(&session, &dest, Overwrite::ErrorIfExists).unwrap();
+
+    let mut wb: Xlsx<_> = open_workbook(&dest).unwrap();
+    let samples = wb.worksheet_range(SAMPLES_SHEET).unwrap();
+    assert_eq!(
+        samples.get_value((1, 11)),
+        Some(&Data::String("14:59:48".into()))
+    );
+    assert_eq!(
+        samples.get_value((1, 1)),
+        Some(&Data::String("2026-08-24T17:59:48Z".into()))
     );
 }
 
@@ -410,7 +458,7 @@ fn standalone_legacy_current_and_bin_inputs_generate_reports() {
         ),
         (
             "20260824T145947_pseudo_s16_i1.csv",
-            b"sample_index,captured_at_utc,elapsed_ms,acquisition_ms,ones,byte_offset,byte_length\n1,2026-08-24T14:59:48Z,1000,2,7,0,2\n"
+            b"sample_index,captured_at_utc,elapsed_ms,acquisition_ms,ones,byte_offset,byte_length\n1,2026-08-24T17:59:48Z,1000,2,7,0,2\n"
                 .as_slice(),
         ),
         (
@@ -429,6 +477,12 @@ fn standalone_legacy_current_and_bin_inputs_generate_reports() {
         let mut wb: Xlsx<_> = open_workbook(&report).unwrap();
         let samples = wb.worksheet_range(SAMPLES_SHEET).unwrap();
         assert_eq!(samples.rows().count(), 2, "{basename}");
+        if basename.ends_with(".csv") {
+            assert_eq!(
+                samples.get_value((1, 11)),
+                Some(&Data::String("14:59:48".into()))
+            );
+        }
     }
 }
 

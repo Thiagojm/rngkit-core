@@ -14,6 +14,7 @@ use rust_xlsxwriter::{
     Chart, ChartFormat, ChartLegendPosition, ChartLine, ChartLineDashType, ChartSolidFill,
     ChartType, Format, Workbook, Worksheet, XlsxError as BookError,
 };
+use time::UtcOffset;
 use time::format_description::well_known::Rfc3339;
 use time::macros::format_description;
 
@@ -46,6 +47,7 @@ pub enum ChartXAxisMode {
 pub struct ReportOptions {
     source_basename: String,
     x_axis_mode: ChartXAxisMode,
+    chart_utc_offset: Option<UtcOffset>,
 }
 
 impl ReportOptions {
@@ -75,6 +77,7 @@ impl ReportOptions {
         Ok(Self {
             source_basename,
             x_axis_mode,
+            chart_utc_offset: None,
         })
     }
 
@@ -88,7 +91,13 @@ impl ReportOptions {
             TimestampProvenance::Recorded => ChartXAxisMode::RecordedTimestamp,
             TimestampProvenance::Estimated => ChartXAxisMode::SampleIndex,
         };
-        Self::new(format!("{}.{}", session.meta().stem, extension), mode)
+        let mut options = Self::new(format!("{}.{}", session.meta().stem, extension), mode)?;
+        if mode == ChartXAxisMode::RecordedTimestamp
+            && ConcatenationStem::parse(&session.meta().stem).is_err()
+        {
+            options.chart_utc_offset = recorded_clock_offset(session);
+        }
+        Ok(options)
     }
 
     /// Safe source artifact basename.
@@ -371,7 +380,11 @@ fn write_samples(
         worksheet.write_number(row, 10, -1.96).map_err(map_book)?;
         match options.x_axis_mode() {
             ChartXAxisMode::RecordedTimestamp => worksheet
-                .write_string(row, 11, fmt_clock(record.timestamp))
+                .write_string(
+                    row,
+                    11,
+                    fmt_clock(record.timestamp, options.chart_utc_offset),
+                )
                 .map_err(map_book)?,
             ChartXAxisMode::SampleIndex => worksheet
                 .write_number(row, 11, record.index.get() as f64)
@@ -489,10 +502,55 @@ fn fmt_ts(ts: Option<rngkit_core::UtcTimestamp>) -> String {
         .unwrap_or_default()
 }
 
-fn fmt_clock(ts: rngkit_core::UtcTimestamp) -> String {
-    ts.inner()
+fn fmt_clock(ts: rngkit_core::UtcTimestamp, offset: Option<UtcOffset>) -> String {
+    let timestamp = offset.map_or_else(|| ts.inner(), |offset| ts.inner().to_offset(offset));
+    timestamp
         .format(&format_description!("[hour]:[minute]:[second]"))
         .unwrap_or_default()
+}
+
+fn recorded_clock_offset(session: &NormalizedSession) -> Option<UtcOffset> {
+    if let Some(raw) = session.meta().local_utc_offset.as_deref() {
+        return parse_utc_offset(raw);
+    }
+
+    // Standalone current CSVs have no manifest. Their stem retains the local
+    // wall-clock start while their rows retain UTC, so their difference reveals
+    // the system offset. Legacy rows already contain local wall-clock values and
+    // naturally infer UTC+00:00 here, avoiding a second conversion.
+    let filename_start = session.meta().started_at?.inner();
+    let first_record = session.records().first()?.timestamp.inner();
+    let difference = (filename_start - first_record).whole_seconds();
+    let rounded = if difference >= 0 {
+        ((difference + 450) / 900) * 900
+    } else {
+        ((difference - 450) / 900) * 900
+    };
+    let tolerance = session
+        .records()
+        .first()
+        .and_then(|record| record.acquisition)
+        .map_or(60, |duration| {
+            i64::try_from(duration.as_secs())
+                .unwrap_or(i64::MAX)
+                .saturating_add(2)
+                .clamp(60, 450)
+        });
+    if !(-43_200..=50_400).contains(&rounded) || (difference - rounded).abs() > tolerance {
+        return None;
+    }
+    UtcOffset::from_whole_seconds(i32::try_from(rounded).ok()?).ok()
+}
+
+fn parse_utc_offset(raw: &str) -> Option<UtcOffset> {
+    let bytes = raw.as_bytes();
+    if bytes.len() != 6 || bytes[3] != b':' || !matches!(bytes[0], b'+' | b'-') {
+        return None;
+    }
+    let hours = raw.get(1..3)?.parse::<i8>().ok()?;
+    let minutes = raw.get(4..6)?.parse::<i8>().ok()?;
+    let sign = if bytes[0] == b'-' { -1 } else { 1 };
+    UtcOffset::from_hms(sign * hours, sign * minutes, 0).ok()
 }
 
 fn duration_label(

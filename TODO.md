@@ -24,7 +24,10 @@
   validated on Windows stable and Rust 1.85
 - Artifact feedback Phase 1: manifest-free flat legacy concatenation reader and
   explicit contextual XLSX chart presentation, focused and complete stable/MSRV
-  validation passed locally; publication is not authorized
+  validation passed and published at `7c79814`
+- Local-clock chart labels use manifest offsets, infer current standalone CSV
+  offsets from canonical filenames, preserve legacy clocks, and pass the
+  complete stable/MSRV validation suite.
 
 ## In progress
 
@@ -33,9 +36,8 @@
 
 ## Next steps
 
-- Inspect generated Phase 1 workbooks in Excel if desired, then request separate
-  authorization for the library commit/push/publication gate before any Tauri
-  dependency pin or Phase 2 integration
+- Pin the published exact revision in the Tauri app and validate the integrated
+  report workflow. Inspect generated workbooks in Excel if desired.
 
 ## Backlog
 

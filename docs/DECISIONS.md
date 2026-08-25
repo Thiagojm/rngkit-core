@@ -167,3 +167,22 @@
   as recorded chart times.
 - Impact: Tauri resolver integration, dependency pinning, library publication,
   and native Excel rendering remain later/separate work.
+
+### Local clock labels in recorded-time charts (2026-08-25)
+
+- Status: accepted, implemented, and validated
+- Contract:
+  - Native sessions convert recorded UTC timestamps with the local UTC offset
+    preserved by `manifest.json`.
+  - A current standalone CSV without a manifest infers the offset from the
+    local wall-clock start in its canonical filename and its first recorded UTC
+    row, rounded to a valid 15-minute offset.
+  - Legacy CSV rows already represent local wall-clock values and are not
+    shifted a second time. Flat and manifest-backed concatenations retain their
+    normalized per-row clocks; BIN-only charts remain sample-index based.
+  - The full normalized timestamp column is unchanged; only the hidden chart
+    category clock labels are localized.
+- Why: chart labels should match the collection machine's local clock without
+  discarding UTC data or inventing times for BIN-only inputs.
+- Impact: consumers must pin an exact reachable `rngkit-core` revision that
+  contains this behavior.
