@@ -22,6 +22,8 @@ pub enum StandaloneInputFormat {
     LegacyV3Csv,
     /// Fixed-size binary samples from a current or legacy stem.
     Bin,
+    /// Headerless legacy concatenation CSV without a manifest.
+    FlatLegacyConcatenation,
 }
 
 /// Format classification used by CSV concatenation entries.

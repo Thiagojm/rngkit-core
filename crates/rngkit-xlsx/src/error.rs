@@ -6,6 +6,12 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum XlsxError {
+    /// The source name used for report presentation is not a safe basename.
+    #[error("invalid report source basename: {basename}")]
+    InvalidSourceBasename {
+        /// Rejected source basename.
+        basename: String,
+    },
     /// Output already exists and overwrite was not selected.
     #[error("xlsx already exists: {path}")]
     AlreadyExists {

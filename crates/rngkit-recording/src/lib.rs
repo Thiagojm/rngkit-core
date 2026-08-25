@@ -30,4 +30,4 @@ pub use naming::{SessionStem, now_local};
 pub use native::{FailPoint, NATIVE_CSV_COLUMNS, NativeCsvRow, NativeSession, SessionWriter};
 pub use normalized::{CsvInputFormat, StandaloneInputFormat};
 pub use normalized::{NormalizedMeta, NormalizedSession, SessionOrigin};
-pub use standalone::open_standalone;
+pub use standalone::{open_flat_legacy_concatenation, open_standalone};

@@ -11,10 +11,11 @@ use rngkit_analysis::{Snapshot, analyze_records};
 use rngkit_core::TimestampProvenance;
 use rngkit_recording::{ConcatenationStem, NormalizedSession, SessionStem, join_contained};
 use rust_xlsxwriter::{
-    Chart, ChartLine, ChartLineDashType, ChartType, Format, Workbook, Worksheet,
-    XlsxError as BookError,
+    Chart, ChartFormat, ChartLegendPosition, ChartLine, ChartLineDashType, ChartSolidFill,
+    ChartType, Format, Workbook, Worksheet, XlsxError as BookError,
 };
 use time::format_description::well_known::Rfc3339;
+use time::macros::format_description;
 
 use crate::error::XlsxError;
 use crate::layout::{
@@ -30,6 +31,81 @@ pub enum Overwrite {
     /// Replace the destination after a successful workbook close.
     Replace,
 }
+
+/// The chart category presentation used for the sample series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartXAxisMode {
+    /// Use recorded sample timestamps formatted as clock labels.
+    RecordedTimestamp,
+    /// Use one-based sample indexes.
+    SampleIndex,
+}
+
+/// Explicit source and chart presentation context for an XLSX report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportOptions {
+    source_basename: String,
+    x_axis_mode: ChartXAxisMode,
+}
+
+impl ReportOptions {
+    /// Creates validated report presentation options.
+    pub fn new(
+        source_basename: impl Into<String>,
+        x_axis_mode: ChartXAxisMode,
+    ) -> Result<Self, XlsxError> {
+        let source_basename = source_basename.into();
+        let valid = !source_basename.is_empty()
+            && source_basename != "."
+            && source_basename != ".."
+            && !source_basename.contains('/')
+            && !source_basename.contains('\\')
+            && !source_basename.chars().any(char::is_control)
+            && matches!(
+                Path::new(&source_basename)
+                    .extension()
+                    .and_then(|extension| extension.to_str()),
+                Some("csv" | "bin")
+            );
+        if !valid {
+            return Err(XlsxError::InvalidSourceBasename {
+                basename: source_basename,
+            });
+        }
+        Ok(Self {
+            source_basename,
+            x_axis_mode,
+        })
+    }
+
+    /// Creates compatible defaults from normalized metadata.
+    pub fn for_session(session: &NormalizedSession) -> Result<Self, XlsxError> {
+        let extension = match session.meta().provenance {
+            TimestampProvenance::Recorded => "csv",
+            TimestampProvenance::Estimated => "bin",
+        };
+        let mode = match session.meta().provenance {
+            TimestampProvenance::Recorded => ChartXAxisMode::RecordedTimestamp,
+            TimestampProvenance::Estimated => ChartXAxisMode::SampleIndex,
+        };
+        Self::new(format!("{}.{}", session.meta().stem, extension), mode)
+    }
+
+    /// Safe source artifact basename.
+    #[must_use]
+    pub fn source_basename(&self) -> &str {
+        &self.source_basename
+    }
+
+    /// Chart category mode.
+    #[must_use]
+    pub fn x_axis_mode(&self) -> ChartXAxisMode {
+        self.x_axis_mode
+    }
+}
+
+/// Alias emphasizing that these options control workbook presentation.
+pub type ReportPresentation = ReportOptions;
 
 /// Output path for a native session: `<dir>/<stem>.xlsx`.
 ///
@@ -93,6 +169,17 @@ pub fn write_report(
     dest: &Path,
     overwrite: Overwrite,
 ) -> Result<PathBuf, XlsxError> {
+    let options = ReportOptions::for_session(session)?;
+    write_report_with_options(session, dest, overwrite, &options)
+}
+
+/// Writes a report with explicit source filename and chart-axis context.
+pub fn write_report_with_options(
+    session: &NormalizedSession,
+    dest: &Path,
+    overwrite: Overwrite,
+    options: &ReportOptions,
+) -> Result<PathBuf, XlsxError> {
     let count = u64::try_from(session.len()).unwrap_or(u64::MAX);
     if count > EXCEL_MAX_SAMPLE_ROWS {
         return Err(XlsxError::RowLimit {
@@ -117,7 +204,7 @@ pub fn write_report(
     let write_result = if FAIL_WORKBOOK.with(|flag| flag.get()) {
         Err(XlsxError::Workbook("injected workbook failure".into()))
     } else {
-        write_workbook(session, &snapshots, &mut file).and_then(|()| {
+        write_workbook(session, &snapshots, options, &mut file).and_then(|()| {
             file.flush()?;
             file.sync_all()?;
             Ok(())
@@ -157,20 +244,21 @@ pub fn write_report(
 fn write_workbook(
     session: &NormalizedSession,
     snapshots: &[Snapshot],
+    options: &ReportOptions,
     writer: &mut File,
 ) -> Result<(), XlsxError> {
     let mut workbook = Workbook::new();
     write_summary(workbook.add_worksheet(), session, snapshots)?;
     {
         let samples = workbook.add_worksheet();
-        write_samples(samples, session, snapshots)?;
+        write_samples(samples, session, snapshots, options)?;
         if !snapshots.is_empty() {
             let last = u32::try_from(snapshots.len()).map_err(|_| XlsxError::RowLimit {
                 count: snapshots.len() as u64,
                 limit: EXCEL_MAX_SAMPLE_ROWS,
             })?;
-            let chart = build_chart(last)?;
-            samples.insert_chart(0, 12, &chart).map_err(map_book)?;
+            let chart = build_chart(last, session, options)?;
+            samples.insert_chart(0, 13, &chart).map_err(map_book)?;
         }
     }
     workbook.save_to_writer(writer).map_err(map_book)?;
@@ -233,6 +321,7 @@ fn write_samples(
     worksheet: &mut Worksheet,
     session: &NormalizedSession,
     snapshots: &[Snapshot],
+    options: &ReportOptions,
 ) -> Result<(), XlsxError> {
     worksheet.set_name(SAMPLES_SHEET).map_err(map_book)?;
     let headers = [
@@ -247,6 +336,7 @@ fn write_samples(
         REF_ZERO,
         REF_PLUS,
         REF_MINUS,
+        "chart_category",
     ];
     for (col, header) in headers.iter().enumerate() {
         worksheet
@@ -279,42 +369,103 @@ fn write_samples(
         worksheet.write_number(row, 8, 0.0).map_err(map_book)?;
         worksheet.write_number(row, 9, 1.96).map_err(map_book)?;
         worksheet.write_number(row, 10, -1.96).map_err(map_book)?;
+        match options.x_axis_mode() {
+            ChartXAxisMode::RecordedTimestamp => worksheet
+                .write_string(row, 11, fmt_clock(record.timestamp))
+                .map_err(map_book)?,
+            ChartXAxisMode::SampleIndex => worksheet
+                .write_number(row, 11, record.index.get() as f64)
+                .map_err(map_book)?,
+        };
     }
-    for col in 8..=10 {
+    for col in 8..=11 {
         worksheet.set_column_hidden(col).map_err(map_book)?;
     }
     Ok(())
 }
 
-fn build_chart(n: u32) -> Result<Chart, XlsxError> {
+fn build_chart(
+    n: u32,
+    session: &NormalizedSession,
+    options: &ReportOptions,
+) -> Result<Chart, XlsxError> {
     let last = n;
+    let category_col = match options.x_axis_mode() {
+        ChartXAxisMode::RecordedTimestamp => 11,
+        ChartXAxisMode::SampleIndex => 0,
+    };
     let mut chart = Chart::new(ChartType::Line);
-    chart.set_name("Cumulative signed Z");
-    chart.title().set_name("Cumulative signed Z");
+    chart
+        .set_name("Cumulative signed Z")
+        .set_width(720)
+        .set_height(420);
+    let title = format!("Z-Score Analysis — {}", options.source_basename());
+    chart.title().set_name(&title);
+    let x_axis_title = match options.x_axis_mode() {
+        ChartXAxisMode::RecordedTimestamp => format!(
+            "Sample time — configured interval: {} s",
+            session.meta().interval.get()
+        ),
+        ChartXAxisMode::SampleIndex => "Sample number".to_owned(),
+    };
+    chart.x_axis().set_name(&x_axis_title);
+    let y_axis_title = format!(
+        "Cumulative signed Z — sample size: {} bits",
+        session.meta().sample_bits.get()
+    );
+    chart.y_axis().set_name(&y_axis_title);
+    chart.x_axis().set_major_gridlines(false);
+    chart
+        .y_axis()
+        .set_major_gridlines_line(ChartLine::new().set_color("#D1D5DB").set_width(0.75));
+    chart
+        .chart_area()
+        .set_format(ChartFormat::new().set_solid_fill(ChartSolidFill::new().set_color("#FFFFFF")));
+    chart
+        .plot_area()
+        .set_format(ChartFormat::new().set_solid_fill(ChartSolidFill::new().set_color("#F8FAFC")));
+    chart.legend().set_position(ChartLegendPosition::Bottom);
     chart
         .add_series()
         .set_name("Cumulative Z")
-        .set_categories((SAMPLES_SHEET, 1, 0, last, 0))
-        .set_values((SAMPLES_SHEET, 1, 7, last, 7));
+        .set_categories((SAMPLES_SHEET, 1, category_col, last, category_col))
+        .set_values((SAMPLES_SHEET, 1, 7, last, 7))
+        .set_format(
+            ChartFormat::new().set_line(ChartLine::new().set_color("#2563EB").set_width(2.25)),
+        );
     chart
         .add_series()
         .set_name(REF_ZERO)
-        .set_categories((SAMPLES_SHEET, 1, 0, last, 0))
-        .set_values((SAMPLES_SHEET, 1, 8, last, 8));
+        .set_categories((SAMPLES_SHEET, 1, category_col, last, category_col))
+        .set_values((SAMPLES_SHEET, 1, 8, last, 8))
+        .set_format(ChartFormat::new().set_line(ChartLine::new().set_color("#94A3B8")));
     chart
         .add_series()
         .set_name(REF_PLUS)
-        .set_categories((SAMPLES_SHEET, 1, 0, last, 0))
+        .set_categories((SAMPLES_SHEET, 1, category_col, last, category_col))
         .set_values((SAMPLES_SHEET, 1, 9, last, 9))
-        .set_format(ChartLine::new().set_dash_type(ChartLineDashType::Dash));
+        .set_format(
+            ChartFormat::new().set_line(
+                ChartLine::new()
+                    .set_color("#94A3B8")
+                    .set_width(1.0)
+                    .set_dash_type(ChartLineDashType::Dash),
+            ),
+        );
     chart
         .add_series()
         .set_name(REF_MINUS)
-        .set_categories((SAMPLES_SHEET, 1, 0, last, 0))
+        .set_categories((SAMPLES_SHEET, 1, category_col, last, category_col))
         .set_values((SAMPLES_SHEET, 1, 10, last, 10))
-        .set_format(ChartLine::new().set_dash_type(ChartLineDashType::Dash));
+        .set_format(
+            ChartFormat::new().set_line(
+                ChartLine::new()
+                    .set_color("#94A3B8")
+                    .set_width(1.0)
+                    .set_dash_type(ChartLineDashType::Dash),
+            ),
+        );
     chart.show_hidden_data();
-    let _ = last;
     Ok(chart)
 }
 
@@ -335,6 +486,12 @@ fn write_opt_ms(
 
 fn fmt_ts(ts: Option<rngkit_core::UtcTimestamp>) -> String {
     ts.and_then(|t| t.inner().format(&Rfc3339).ok())
+        .unwrap_or_default()
+}
+
+fn fmt_clock(ts: rngkit_core::UtcTimestamp) -> String {
+    ts.inner()
+        .format(&format_description!("[hour]:[minute]:[second]"))
         .unwrap_or_default()
 }
 

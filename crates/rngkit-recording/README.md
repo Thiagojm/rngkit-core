@@ -22,12 +22,17 @@ session directory. Existing BIN, CSV, and manifest.json entries are opened
 without following symbolic links or reparse points.
 
 open_standalone accepts a current native CSV, a headerless legacy v3 CSV, or a
-fixed-size BIN without requiring a manifest. Current CSV input uses the exact
+fixed-size BIN without requiring a manifest. It also accepts a canonical flat
+legacy concatenation CSV named
+`YYYYMMDDTHHMMSS_concat_<source>_s<bits>_i<seconds>[_f<fold>].csv` without a
+manifest; its recorded row timestamps define the normalized sample range and
+remain distinct from collected-session stems. Current CSV input uses the exact
 seven-column native header and validates contiguous indexes, RFC 3339
 timestamps, one-count bounds, byte lengths, and byte offsets. The current
 source IDs are bitb, trng, rdseed, and pseudo; legacy CSV keeps its historical
-family restriction. A same-stem pair is validated without changing either
-input.
+family restriction. Flat concatenation rejects current headers, empty or
+decreasing legacy rows, unsupported sources, and invalid one-counts. A
+same-stem pair is validated without changing either input.
 
 inspect_csv_inputs streams distinct nonempty current or legacy CSV files,
 hashes each file with SHA-256, and returns chronologically ordered preview

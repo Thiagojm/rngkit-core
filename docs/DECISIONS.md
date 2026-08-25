@@ -145,3 +145,25 @@
   - Test reader `calamine = 0.35.0` (MSRV 1.83); not 0.36+ (MSRV 1.88)
 - Why: workspace MSRV is 1.85; latest Excel crates require 1.88
 - Impact: pin these versions in the workspace table; bump only after MSRV review
+
+### Flat legacy concatenation and contextual report charts (2026-08-25)
+
+- Status: implemented and locally validated; publication remains separately
+  unauthorized
+- Contract:
+  - A canonical `YYYYMMDDTHHMMSS_concat_<source>_s<bits>_i<seconds>[_f<fold>].csv`
+    is a reportable headerless legacy artifact without `manifest.json`.
+  - `ConcatenationStem` remains independent from `SessionStem`; the flat reader
+    validates legacy source/fold rules, nonempty rows, timestamp order, and
+    one-count bounds, then preserves recorded row timestamps in a normalized
+    session.
+  - XLSX callers pass a validated source basename and `RecordedTimestamp` or
+    `SampleIndex` through `ReportOptions`. Recorded charts use a hidden
+    `HH:mm:ss` category helper and BIN-only charts use the sample-index column.
+    Titles and axes identify the source, interval, sample size, and descriptive
+    cumulative signed Z without inferential language.
+- Why: support the older flat concatenation artifact without inventing a
+  manifest or provenance, and prevent estimated BIN timestamps from appearing
+  as recorded chart times.
+- Impact: Tauri resolver integration, dependency pinning, library publication,
+  and native Excel rendering remain later/separate work.

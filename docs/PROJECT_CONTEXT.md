@@ -18,6 +18,8 @@ descriptive cumulative statistics, and can export an Excel report.
    files through normalized records.
 6. Analyze incrementally or in batch with the same accumulator.
 7. Export `<stem>.xlsx` with Summary, Samples, and a descriptive Z chart.
+   Canonical flat legacy `_concat_` CSVs are also reportable without a
+   manifest.
 8. Inspect compatible current/legacy CSVs with `inspect_csv_inputs` for a
    derived concatenation preview (format labels, basenames, and SHA-256, no
    absolute paths).
@@ -67,6 +69,13 @@ descriptive cumulative statistics, and can export an Excel report.
    ranges, and one-count bounds. New bundles use schema 2 with per-input format;
    schema-1 legacy bundles remain readable
 - Derived report paths stay inside the validated bundle directory
+- Flat legacy concatenation CSVs use the independent `ConcatenationStem`, are
+  read-only and manifest-free, retain recorded row timestamps, and reject
+  current headers, empty/decreasing input, unsupported legacy sources, and
+  one-count overflow
+- XLSX report presentation accepts an explicit safe source basename and axis
+  mode. Recorded-time charts use hidden `HH:mm:ss` categories while BIN-only
+  charts use sample indexes; title and axis copy remains descriptive
 
 ## Current validation evidence
 
@@ -76,3 +85,8 @@ descriptive cumulative statistics, and can export an Excel report.
   current CSV, BIN, schema-1 concatenation, and schema-2 concatenation inputs.
 - The four opt-in physical hardware tests were not run during that validation;
   the default suite confirmed that they remain ignored.
+- **Artifact feedback and report charts Phase 1 (2026-08-25):** focused flat
+  concatenation and XLSX tests, complete stable workspace validation, and the
+  complete Rust 1.85 check/test validation passed locally. The library remains
+  at its existing reachable baseline because commit, push, and publication are
+  separate approvals. Optional Excel rendering review remains unverified.

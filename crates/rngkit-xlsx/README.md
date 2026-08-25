@@ -14,3 +14,10 @@ stem and must remain inside the selected directory. Workbooks are written to a
 unique create-new temporary file in the destination directory and promoted only
 after a successful close; `ErrorIfExists` never replaces a destination that
 appears concurrently.
+
+Callers that know the selected artifact should use `ReportOptions` with its
+safe `.csv` or `.bin` basename and `ChartXAxisMode`. Recorded CSV timestamps are
+shown as `HH:mm:ss` chart categories through a hidden helper column while the
+full timestamp remains in `Samples`; BIN-only reports use the one-based sample
+index. The chart title includes the source basename and its axes describe the
+sample time/index, configured interval, cumulative signed Z, and sample size.

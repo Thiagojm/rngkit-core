@@ -307,6 +307,11 @@ pub(crate) fn for_each_csv_row(
         StandaloneInputFormat::Bin => Err(RecordingError::ConcatenationInputNotCsv {
             basename: basename.to_owned(),
         }),
+        StandaloneInputFormat::FlatLegacyConcatenation => {
+            Err(RecordingError::ConcatenationInputNotCsv {
+                basename: basename.to_owned(),
+            })
+        }
     }
 }
 
@@ -533,6 +538,7 @@ fn validate_source(source: &SourceId, format: StandaloneInputFormat) -> Result<(
             SOURCE_ID_BITB | SOURCE_ID_TRNG | SOURCE_ID_RDSEED | SOURCE_ID_PSEUDO
         ),
         StandaloneInputFormat::Bin => false,
+        StandaloneInputFormat::FlatLegacyConcatenation => false,
     };
     if !supported {
         return Err(RecordingError::UnsupportedVersion {
@@ -550,6 +556,7 @@ fn format_name(format: StandaloneInputFormat) -> &'static str {
         StandaloneInputFormat::CurrentCsv => "current csv",
         StandaloneInputFormat::LegacyV3Csv => "legacy v3 csv",
         StandaloneInputFormat::Bin => "bin",
+        StandaloneInputFormat::FlatLegacyConcatenation => "flat legacy concatenation",
     }
 }
 

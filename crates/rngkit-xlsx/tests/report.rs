@@ -12,9 +12,9 @@ use rngkit_recording::{
     create_legacy_csv_concatenation_at, open_concatenation, open_standalone,
 };
 use rngkit_xlsx::{
-    EXCEL_MAX_SAMPLE_ROWS, Overwrite, REF_MINUS, REF_PLUS, SAMPLES_SHEET, SUMMARY_SHEET, XlsxError,
-    derived_report_path, native_report_path, with_report_promote_hook, with_workbook_write_failure,
-    write_report,
+    ChartXAxisMode, EXCEL_MAX_SAMPLE_ROWS, Overwrite, REF_MINUS, REF_PLUS, ReportOptions,
+    SAMPLES_SHEET, SUMMARY_SHEET, XlsxError, derived_report_path, native_report_path,
+    with_report_promote_hook, with_workbook_write_failure, write_report, write_report_with_options,
 };
 use tempfile::tempdir;
 use zip::ZipArchive;
@@ -137,6 +137,63 @@ fn workbook_has_summary_samples_and_reference_chart() {
     ] {
         assert!(!lower.contains(banned), "chart xml contained {banned}");
     }
+}
+
+#[test]
+fn explicit_chart_context_controls_title_axes_and_categories() {
+    let dir = tempdir().unwrap();
+    let csv_report = dir.path().join("recorded.xlsx");
+    let csv_options = ReportOptions::new(
+        "20260824T145947_bitb_s8_i1_f0.csv",
+        ChartXAxisMode::RecordedTimestamp,
+    )
+    .unwrap();
+    write_report_with_options(
+        &session_with(&[4, 8, 0]),
+        &csv_report,
+        Overwrite::ErrorIfExists,
+        &csv_options,
+    )
+    .unwrap();
+    let csv_xml = chart_xml(&csv_report);
+    assert!(csv_xml.contains("Z-Score Analysis"));
+    assert!(csv_xml.contains("20260824T145947_bitb_s8_i1_f0.csv"));
+    assert!(csv_xml.contains("Sample time"));
+    assert!(csv_xml.contains("configured interval: 1 s"));
+    assert!(csv_xml.contains("Cumulative signed Z"));
+    assert!(csv_xml.contains("sample size: 8 bits"));
+    assert!(
+        csv_xml.contains("$L$2:$L$4"),
+        "recorded categories must use helper column"
+    );
+
+    let bin_report = dir.path().join("indexed.xlsx");
+    let bin_options = ReportOptions::new(
+        "20260824T145947_rdseed_s8_i1.bin",
+        ChartXAxisMode::SampleIndex,
+    )
+    .unwrap();
+    write_report_with_options(
+        &session_with(&[4, 8, 0]),
+        &bin_report,
+        Overwrite::ErrorIfExists,
+        &bin_options,
+    )
+    .unwrap();
+    let bin_xml = chart_xml(&bin_report);
+    assert!(bin_xml.contains("20260824T145947_rdseed_s8_i1.bin"));
+    assert!(bin_xml.contains("Sample number"));
+    assert!(
+        bin_xml.contains("$A$2:$A$4"),
+        "index categories must use sample index column"
+    );
+}
+
+#[test]
+fn report_options_reject_paths_and_unsupported_extensions() {
+    assert!(ReportOptions::new("..\\secret.csv", ChartXAxisMode::SampleIndex).is_err());
+    assert!(ReportOptions::new("report.xlsx", ChartXAxisMode::SampleIndex).is_err());
+    assert!(ReportOptions::new("report.csv", ChartXAxisMode::RecordedTimestamp).is_ok());
 }
 
 #[test]

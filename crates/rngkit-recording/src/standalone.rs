@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use rngkit_core::{SampleBits, SampleRecord, SessionStatus, TimestampProvenance};
 
 use crate::NATIVE_CSV_COLUMNS;
+use crate::concatenation::ConcatenationStem;
 use crate::error::RecordingError;
-use crate::legacy_v3::{bin::LegacyBinReader, open_legacy};
+use crate::legacy_v3::{bin::LegacyBinReader, csv, open_legacy};
 use crate::naming::SessionStem;
 use crate::native::reader::read_current_csv;
 use crate::normalized::{NormalizedMeta, NormalizedSession, StandaloneInputFormat};
@@ -20,8 +21,11 @@ use crate::normalized::{NormalizedMeta, NormalizedSession, StandaloneInputFormat
 pub fn open_standalone(path: impl AsRef<Path>) -> Result<NormalizedSession, RecordingError> {
     let path = path.as_ref();
     let stem_string = file_stem(path)?;
-    let stem = SessionStem::parse(&stem_string)?;
     let extension = path.extension().and_then(|value| value.to_str());
+    if extension == Some("csv") && ConcatenationStem::parse(&stem_string).is_ok() {
+        return open_flat_legacy_concatenation(path);
+    }
+    let stem = SessionStem::parse(&stem_string)?;
     match extension {
         Some("csv") => match detect_csv_format(path)? {
             StandaloneInputFormat::CurrentCsv => {
@@ -29,12 +33,74 @@ pub fn open_standalone(path: impl AsRef<Path>) -> Result<NormalizedSession, Reco
             }
             StandaloneInputFormat::LegacyV3Csv => open_legacy(path),
             StandaloneInputFormat::Bin => unreachable!("BIN cannot be detected from a CSV path"),
+            StandaloneInputFormat::FlatLegacyConcatenation => {
+                unreachable!("flat concatenation is classified from its canonical stem")
+            }
         },
         Some("bin") => open_bin_standalone(path, &stem_string, &stem),
         _ => Err(RecordingError::InvalidName {
             reason: "standalone input must have a .csv or .bin extension".into(),
         }),
     }
+}
+
+/// Opens one canonical flat legacy concatenation CSV without a manifest.
+///
+/// The concatenation stem remains distinct from [`SessionStem`]. The CSV is
+/// read-only and must contain headerless legacy timestamp/one-count rows. Its
+/// first and last recorded timestamps become the normalized sample range; the
+/// creation timestamp in the filename is not substituted for them.
+pub fn open_flat_legacy_concatenation(
+    path: impl AsRef<Path>,
+) -> Result<NormalizedSession, RecordingError> {
+    let path = path.as_ref();
+    if path.extension().and_then(|value| value.to_str()) != Some("csv") {
+        return Err(RecordingError::InvalidName {
+            reason: "flat legacy concatenation input must have a .csv extension".into(),
+        });
+    }
+    let stem_string = file_stem(path)?;
+    let stem = ConcatenationStem::parse(&stem_string)?;
+    validate_legacy_source(stem.source())?;
+    if matches!(detect_csv_format(path)?, StandaloneInputFormat::CurrentCsv) {
+        return Err(RecordingError::InvalidNativeCsvHeader {
+            basename: input_basename(path)?,
+        });
+    }
+    let rows = csv::read_legacy_csv(path, stem.sample_bits())?;
+    if rows.is_empty() {
+        return Err(RecordingError::EmptyConcatenationInput {
+            basename: input_basename(path)?,
+        });
+    }
+    for pair in rows.windows(2) {
+        if pair[1].timestamp < pair[0].timestamp {
+            return Err(RecordingError::DecreasingConcatenationTimestamp {
+                basename: input_basename(path)?,
+            });
+        }
+    }
+    let records = csv::records_from_csv(&rows)?;
+    let first = records.first().expect("nonempty rows").timestamp;
+    let last = records.last().expect("nonempty rows").timestamp;
+    Ok(NormalizedSession::from_parts(
+        NormalizedMeta {
+            stem: stem_string,
+            source_id: stem.source().clone(),
+            source_label: source_label(stem.source().as_str()),
+            source_variant: None,
+            fold: stem.fold(),
+            sample_bits: stem.sample_bits(),
+            interval: stem.interval(),
+            started_at: Some(first),
+            completed_at: Some(last),
+            status: SessionStatus::Completed,
+            overrun_count: None,
+            provenance: TimestampProvenance::Recorded,
+            local_utc_offset: None,
+        },
+        records,
+    ))
 }
 
 /// Detects the exact current native header or the headerless legacy format.
@@ -95,6 +161,9 @@ fn open_bin_standalone(
             }
             StandaloneInputFormat::LegacyV3Csv => return open_legacy(path),
             StandaloneInputFormat::Bin => unreachable!("CSV cannot be detected as BIN"),
+            StandaloneInputFormat::FlatLegacyConcatenation => {
+                unreachable!("flat concatenation is classified from its canonical stem")
+            }
         }
     }
 
@@ -187,6 +256,19 @@ fn validate_current_source(stem: &SessionStem) -> Result<(), RecordingError> {
     } else {
         Err(RecordingError::UnsupportedVersion {
             reason: format!("standalone input does not support source {}", stem.source()),
+        })
+    }
+}
+
+fn validate_legacy_source(source: &rngkit_core::SourceId) -> Result<(), RecordingError> {
+    if matches!(
+        source.as_str(),
+        rngkit_core::SOURCE_ID_BITB | rngkit_core::SOURCE_ID_TRNG | rngkit_core::SOURCE_ID_PSEUDO
+    ) {
+        Ok(())
+    } else {
+        Err(RecordingError::UnsupportedVersion {
+            reason: format!("legacy v3 does not include source {source}"),
         })
     }
 }

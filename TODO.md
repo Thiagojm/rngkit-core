@@ -22,15 +22,20 @@
 - Format-neutral standalone legacy CSV/current CSV/BIN readers and schema-2
   current/legacy/mixed CSV concatenation, including normalized XLSX generation,
   validated on Windows stable and Rust 1.85
+- Artifact feedback Phase 1: manifest-free flat legacy concatenation reader and
+  explicit contextual XLSX chart presentation, focused and complete stable/MSRV
+  validation passed locally; publication is not authorized
 
 ## In progress
 
-- No implementation phase is currently authorized.
+- Phase 1 user-validation gate: optional Excel inspection of generated
+  recorded-time and BIN/index workbooks remains unverified.
 
 ## Next steps
 
-- Use the reachable Phase 1 `rngkit-core` revision in the separate Tauri app
-  only after explicit Phase 2 authorization
+- Inspect generated Phase 1 workbooks in Excel if desired, then request separate
+  authorization for the library commit/push/publication gate before any Tauri
+  dependency pin or Phase 2 integration
 
 ## Backlog
 
