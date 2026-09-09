@@ -820,7 +820,7 @@ dependencies = [
 [[package]]
 name = "trng3-rs"
 version = "0.1.0"
-source = "git+https://github.com/Thiagojm/trng3-rs?rev=0bbe91494aae5f53977db559ce6443b2278b98ba#0bbe91494aae5f53977db559ce6443b2278b98ba"
+source = "git+https://github.com/Thiagojm/trng3-rs?rev=08f1889a0e21f39b1f418073c829c3de250419b6#08f1889a0e21f39b1f418073c829c3de250419b6"
 dependencies = [
  "serialport",
 ]

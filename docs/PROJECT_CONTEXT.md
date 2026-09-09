@@ -104,3 +104,11 @@ descriptive cumulative statistics, and can export an Excel report.
   and local-clock context from a valid sibling CSV. Focused XLSX tests and the
   complete stable/MSRV workspace matrix passed locally; physical hardware tests
   remained ignored.
+
+## TrueRNG integration (2026-09-09)
+
+- Integrated trng3-rs `08f1889` per-acquisition input purge. Physical acceptance
+  remains pending at 8096 bits / 1 second with unplug after sample 5.
+- [ ] Review bitb-rs and intel_seed plus adapters for buffered old data, generation
+  semantics, and whether transport-specific corrections are required.
+- Windows locked workspace tests, doctests, clippy, format and MSRV 1.85 check passed.

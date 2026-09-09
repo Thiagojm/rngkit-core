@@ -48,3 +48,10 @@
 - RngKitPSG version 2 import
 - Sequential e-values / confidence sequences
 - crates.io publication (blocked on Git-pinned source crates)
+
+## TrueRNG integration (2026-09-09)
+
+- Integrated trng3-rs `08f1889` per-acquisition input purge. Physical acceptance
+  remains pending at 8096 bits / 1 second with unplug after sample 5.
+- [ ] Review bitb-rs and intel_seed plus adapters for buffered old data, generation
+  semantics, and whether transport-specific corrections are required.

@@ -10,7 +10,7 @@
   - `rngkit-xlsx` ← core, analysis, recording
   - Source crates are optional Git deps of `rngkit-sources` (`bitb`, `trng3`,
     `rdseed`, `pseudo`; all default-on)
-  - Pinned revisions: bitb-rs `18e586e`, trng3-rs `0bbe914`, intel_seed
+  - Pinned revisions: bitb-rs `18e586e`, trng3-rs `08f1889`, intel_seed
     `1827409`, pseudo_rng `1c728bc`
 - Why: isolate spreadsheet and hardware deps; keep source crates unmoved
 - Impact: no crates.io publication until Git deps are replaced
@@ -186,3 +186,10 @@
   discarding UTC data or inventing times for BIN-only inputs.
 - Impact: consumers must pin an exact reachable `rngkit-core` revision that
   contains this behavior.
+
+### TrueRNG input freshness (2026-09-09)
+
+- Pin trng3-rs `08f1889a0e21f39b1f418073c829c3de250419b6`: each acquisition
+  clears queued serial input. The adapter delegates directly and preserves errors.
+- Host purge does not guarantee device generation time or immediate unplug
+  detection. Physical disconnect acceptance remains pending.
