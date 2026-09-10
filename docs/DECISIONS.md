@@ -10,7 +10,7 @@
   - `rngkit-xlsx` ← core, analysis, recording
   - Source crates are optional Git deps of `rngkit-sources` (`bitb`, `trng3`,
     `rdseed`, `pseudo`; all default-on)
-  - Pinned revisions: bitb-rs `18e586e`, trng3-rs `08f1889`, intel_seed
+  - Pinned revisions: bitb-rs `e4cc6c6`, trng3-rs `08f1889`, intel_seed
     `1827409`, pseudo_rng `1c728bc`
 - Why: isolate spreadsheet and hardware deps; keep source crates unmoved
 - Impact: no crates.io publication until Git deps are replaced
@@ -192,4 +192,10 @@
 - Pin trng3-rs `08f1889a0e21f39b1f418073c829c3de250419b6`: each acquisition
   clears queued serial input. The adapter delegates directly and preserves errors.
 - Host purge does not guarantee device generation time or immediate unplug
-  detection. Physical disconnect acceptance remains pending.
+  detection. The user reported successful app acceptance on 2026-09-10.
+
+### BitBabbler failure isolation (2026-09-10)
+
+- Pin bitb-rs e4cc6c689b14d496b917aa45cfe3352c8e03adc5: failed acquisition handles
+  reject reuse; sync/purge have total budgets and Drop does not drain input.
+- Adapters still delegate directly; no API or RDSEED change is needed.

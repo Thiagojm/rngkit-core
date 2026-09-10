@@ -105,10 +105,11 @@ descriptive cumulative statistics, and can export an Excel report.
   complete stable/MSRV workspace matrix passed locally; physical hardware tests
   remained ignored.
 
-## TrueRNG integration (2026-09-09)
+## Source freshness integration (2026-09-10)
 
-- Integrated trng3-rs `08f1889` per-acquisition input purge. Physical acceptance
-  remains pending at 8096 bits / 1 second with unplug after sample 5.
-- [ ] Review bitb-rs and intel_seed plus adapters for buffered old data, generation
-  semantics, and whether transport-specific corrections are required.
-- Windows locked workspace tests, doctests, clippy, format and MSRV 1.85 check passed.
+- TrueRNG per-acquisition purge is integrated; the user reported successful
+  native app acceptance on 2026-09-10, without an independent hardware log.
+- BitBabbler e4cc6c6 prevents reuse after acquisition failures and bounds sync/purge;
+  Drop no longer drains input. No adapter API or RDSEED change is needed.
+- Locked workspace all-target tests, clippy and MSRV 1.85 check passed on Windows.
+  Four physical tests remained ignored; native BitBabbler retest is pending.

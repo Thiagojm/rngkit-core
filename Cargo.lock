@@ -29,7 +29,7 @@ dependencies = [
 [[package]]
 name = "bitb-rs"
 version = "0.1.0"
-source = "git+https://github.com/Thiagojm/bitb-rs?rev=18e586e5e2cf3e14742d1cd86f593a8ad1adbe3d#18e586e5e2cf3e14742d1cd86f593a8ad1adbe3d"
+source = "git+https://github.com/Thiagojm/bitb-rs?rev=e4cc6c689b14d496b917aa45cfe3352c8e03adc5#e4cc6c689b14d496b917aa45cfe3352c8e03adc5"
 dependencies = [
  "rusb",
 ]
