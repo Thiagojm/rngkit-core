@@ -170,7 +170,10 @@ impl fmt::Display for SessionStem {
     }
 }
 
-fn validate_fold_rules(source: &SourceId, fold: Option<Fold>) -> Result<(), RecordingError> {
+pub(crate) fn validate_fold_rules(
+    source: &SourceId,
+    fold: Option<Fold>,
+) -> Result<(), RecordingError> {
     if source.is_bitb() {
         if fold.is_none() {
             return Err(RecordingError::InvalidName {

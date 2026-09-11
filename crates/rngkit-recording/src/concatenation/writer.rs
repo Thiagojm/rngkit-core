@@ -14,7 +14,9 @@ use time::{OffsetDateTime, UtcOffset};
 
 use super::ConcatenationPreview;
 use crate::concatenation::inspect::{for_each_csv_row, inspect_csv_inputs_ordered};
-use crate::concatenation::manifest::ConcatenationManifest;
+use crate::concatenation::manifest::{
+    ConcatenationInputEntry, ConcatenationManifest, MIXED_SOURCE_ID,
+};
 use crate::concatenation::naming::ConcatenationStem;
 use crate::error::RecordingError;
 use crate::fsutil::{join_contained, validate_contained_name};
@@ -101,8 +103,10 @@ pub fn create_legacy_csv_concatenation_at(
     create_concatenation_at(paths, output_root, local_created, local_offset, false)
 }
 
-/// Creates a schema-2 derived bundle from current, legacy, or mixed CSV
-/// inputs.
+/// Creates a derived bundle from current, legacy, or mixed-format CSV inputs.
+///
+/// Homogeneous output is schema 2. Heterogeneous source or fold output is
+/// schema 3 with identity `mixed`.
 pub fn create_csv_concatenation(
     paths: &[PathBuf],
     output_root: &Path,
@@ -111,7 +115,7 @@ pub fn create_csv_concatenation(
     create_csv_concatenation_at(paths, output_root, local, offset)
 }
 
-/// Clock-injectable schema-2 CSV concatenation creation used by tests.
+/// Clock-injectable CSV concatenation creation used by tests.
 #[doc(hidden)]
 pub fn create_csv_concatenation_at(
     paths: &[PathBuf],
@@ -263,13 +267,27 @@ fn write_manifest(
     created_at: UtcTimestamp,
     local_offset: UtcOffset,
 ) -> Result<(), RecordingError> {
-    let schema2 = preview
+    let mixed = preview.source_id().as_str() == MIXED_SOURCE_ID;
+    let manifest = if mixed {
+        ConcatenationManifest::new_mixed_csv(
+            stem,
+            created_at,
+            local_offset,
+            preview.inputs().to_vec(),
+        )?
+    } else if preview
         .inputs()
         .first()
         .and_then(|input| input.format())
-        .is_some();
-    let manifest = if schema2 {
-        ConcatenationManifest::new_csv(stem, created_at, local_offset, preview.inputs().to_vec())?
+        .is_some()
+    {
+        let inputs = preview
+            .inputs()
+            .iter()
+            .cloned()
+            .map(ConcatenationInputEntry::without_provenance)
+            .collect();
+        ConcatenationManifest::new_csv(stem, created_at, local_offset, inputs)?
     } else {
         ConcatenationManifest::new(stem, created_at, local_offset, preview.inputs().to_vec())?
     };

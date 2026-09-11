@@ -125,13 +125,15 @@
     compatibility; v2/space-delimited input remains rejected
   - A same-stem CSV/BIN pair is validated read-only; standalone BIN timestamps
     are estimated from the filename start and interval
-  - `inspect_csv_inputs` and `create_csv_concatenation` accept compatible
-    legacy-only, current-only, and mixed CSV sets
-  - New derived manifests use schema 2, kind `csv_concatenation`, and a
-    per-input `current_csv` or `legacy_v3_csv` format. Existing schema-1
-    `legacy_csv_concatenation` manifests remain readable without migration
-  - Legacy-only public wrappers remain restrictive and preserve schema-1
-    behavior. Preview, debug, and manifests contain basenames/hashes only
+  - `inspect_csv_inputs` and `create_csv_concatenation` accept current,
+    legacy, or mixed-format CSVs when sample bits and interval match exactly.
+    Source and fold may differ; equal average throughput is not enough
+  - Homogeneous output stays schema 2 with the shared source token.
+    Heterogeneous output is schema 3, kind `csv_concatenation`, token `mixed`,
+    label `Mixed sources`, no fold, and per-input source/fold from each stem
+  - Schema-1 `legacy_csv_concatenation` remains readable. Legacy-only wrappers
+    still require matching source, bits, interval, and fold. Previews and
+    manifests store basenames/hashes only
 - Why: centralize parsing, normalization, compatibility, and provenance before
   Tauri Reports and Combine integration
 - Impact: no Tauri or source-adapter changes; application integration remains a

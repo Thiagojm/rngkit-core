@@ -9,7 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rngkit_analysis::{Snapshot, analyze_records};
 use rngkit_core::TimestampProvenance;
-use rngkit_recording::{ConcatenationStem, NormalizedSession, SessionStem, join_contained};
+use rngkit_recording::{
+    ConcatenationStem, MIXED_SOURCE_ID, NormalizedSession, SessionStem, join_contained,
+};
 use rust_xlsxwriter::{
     Chart, ChartFormat, ChartLegendPosition, ChartLine, ChartLineDashType, ChartSolidFill,
     ChartType, Format, Workbook, Worksheet, XlsxError as BookError,
@@ -300,8 +302,13 @@ fn write_summary(
         .map_err(map_book)?;
     let meta = session.meta();
     let last = snapshots.last();
+    let source_value = if meta.source_id.as_str() == MIXED_SOURCE_ID {
+        meta.source_label.clone()
+    } else {
+        meta.source_id.as_str().to_owned()
+    };
     let values: Vec<String> = vec![
-        meta.source_id.as_str().to_owned(),
+        source_value,
         meta.source_variant.clone().unwrap_or_default(),
         meta.fold.map(|f| f.get().to_string()).unwrap_or_default(),
         meta.sample_bits.get().to_string(),

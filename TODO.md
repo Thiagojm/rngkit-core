@@ -34,17 +34,16 @@
 
 ## In progress
 
-- Phase 1 user-validation gate: optional Excel inspection of generated
-  recorded-time and BIN/index workbooks remains unverified.
+- Mixed-source concatenation Phase 1 (core + XLSX) implemented. Homogeneous
+  schema 2 and mixed schema 3 (`mixed` / `Mixed sources`) are covered by
+  locked tests. Awaiting user validation of mixed vs homogeneous bundles
+  and optional mixed XLSX. Optional Excel inspection of recorded-time and
+  BIN/index workbooks remains unverified.
 
 ## Next steps
 
-- Mixed-source concatenation design and plan reviewed and corrected:
-  `docs/specs/2026-09-11-mixed-source-concatenation-design.md` and
-  `docs/plans/2026-09-11-mixed-source-concatenation-plan.md`.
-  Implementation has not started; Phase 1 awaits an explicit execution request.
-- Pin the published exact revision in the Tauri app and validate the integrated
-  report workflow. Inspect generated workbooks in Excel if desired.
+- After Phase 1 validation and a separate Phase 2 request: pin the published
+  exact `rngkit-core` revision in the Tauri app and update Combine/Help.
 
 ## Backlog
 

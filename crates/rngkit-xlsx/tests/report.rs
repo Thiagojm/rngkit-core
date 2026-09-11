@@ -571,4 +571,42 @@ fn schema_two_derived_bundle_generates_report() {
     let mut wb: Xlsx<_> = open_workbook(&report).unwrap();
     let samples = wb.worksheet_range(SAMPLES_SHEET).unwrap();
     assert_eq!(samples.rows().count(), 4);
+
+    let summary = wb.worksheet_range(SUMMARY_SHEET).unwrap();
+    assert_eq!(
+        summary.get_value((1, 1)),
+        Some(&Data::String("trng".into()))
+    );
+}
+
+#[test]
+fn mixed_concatenation_summary_uses_friendly_source_label() {
+    let dir = tempdir().unwrap();
+    let trng = dir.path().join("20260824T145947_trng_s16_i1.csv");
+    let pseudo = dir.path().join("20260824T145950_pseudo_s16_i1.csv");
+    std::fs::write(&trng, "20260824T145948,8\n20260824T145949,7\n").unwrap();
+    std::fs::write(&pseudo, "20260824T145950,6\n20260824T145951,5\n").unwrap();
+    let date = time::Date::from_calendar_date(2026, time::Month::August, 24).unwrap();
+    let clock = time::Time::from_hms(15, 0, 0).unwrap();
+    let local = time::PrimitiveDateTime::new(date, clock).assume_utc();
+    let bundle = create_csv_concatenation_at(
+        &[trng, pseudo],
+        &dir.path().join("out"),
+        local,
+        time::UtcOffset::UTC,
+    )
+    .unwrap();
+    let session = open_concatenation(&bundle).unwrap();
+    let stem = ConcatenationStem::parse(&session.meta().stem).unwrap();
+    assert!(stem.as_str().contains("_concat_mixed_"));
+    let report = derived_report_path(&bundle, &stem).unwrap();
+    write_report(&session, &report, Overwrite::ErrorIfExists).unwrap();
+
+    let mut wb: Xlsx<_> = open_workbook(&report).unwrap();
+    let summary = wb.worksheet_range(SUMMARY_SHEET).unwrap();
+    assert_eq!(
+        summary.get_value((1, 1)),
+        Some(&Data::String("Mixed sources".into()))
+    );
+    assert_eq!(summary.get_value((3, 1)), Some(&Data::Empty));
 }

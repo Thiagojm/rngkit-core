@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use rngkit_core::{Fold, IntervalSeconds, SampleBits, SourceId, UtcTimestamp};
 use rngkit_recording::{
     CONCATENATION_KIND, CONCATENATION_SCHEMA_VERSION, ConcatenationCompatibilityField,
-    ConcatenationManifest, ConcatenationStem, NATIVE_CSV_COLUMNS, RecordingError, SessionStem,
-    inspect_legacy_csvs,
+    ConcatenationManifest, ConcatenationStem, MIXED_SOURCE_ID, NATIVE_CSV_COLUMNS, RecordingError,
+    SessionStem, inspect_legacy_csvs,
 };
 use tempfile::tempdir;
 use time::{Date, Month, PrimitiveDateTime, Time, UtcOffset};
@@ -107,6 +107,25 @@ fn concat_stem_bitb_requires_fold_and_others_reject_fold() {
         ConcatenationStem::new(
             t,
             SourceId::trng(),
+            bits(),
+            interval(),
+            Some(Fold::new(0).unwrap())
+        )
+        .is_err()
+    );
+    let mixed = ConcatenationStem::new(
+        t,
+        SourceId::new(MIXED_SOURCE_ID).unwrap(),
+        bits(),
+        interval(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(mixed.as_str(), "20260821T183000_concat_mixed_s16_i1");
+    assert!(
+        ConcatenationStem::new(
+            t,
+            SourceId::new(MIXED_SOURCE_ID).unwrap(),
             bits(),
             interval(),
             Some(Fold::new(0).unwrap())
@@ -388,6 +407,12 @@ fn manifest_rejects_unknown_schema_and_kind() {
         err,
         RecordingError::UnsupportedConcatenationKind { ref kind } if kind == "native_session"
     ));
+
+    let mut provenance = valid_single_input_manifest_json();
+    provenance["inputs"][0]["source_id"] = serde_json::json!("trng");
+    let encoded = serde_json::to_vec(&provenance).unwrap();
+    let err = ConcatenationManifest::from_slice(&encoded).unwrap_err();
+    assert!(matches!(err, RecordingError::Corrupt { .. }));
 }
 
 #[test]

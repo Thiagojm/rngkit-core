@@ -5,15 +5,15 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-use rngkit_core::{
-    Fold, IntervalSeconds, SOURCE_ID_BITB, SOURCE_ID_PSEUDO, SOURCE_ID_RDSEED, SOURCE_ID_TRNG,
-    SampleBits, SampleIndex, SourceId, UtcTimestamp,
-};
+use rngkit_core::{Fold, IntervalSeconds, SampleBits, SampleIndex, SourceId, UtcTimestamp};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::NATIVE_CSV_COLUMNS;
-use crate::concatenation::manifest::{ConcatenationInputEntry, ContentSha256, validate_basename};
+use crate::concatenation::manifest::{
+    ConcatenationInputEntry, ContentSha256, mixed_source_id, validate_basename,
+    validate_input_source,
+};
 use crate::error::{ConcatenationCompatibilityField, RecordingError};
 use crate::legacy_v3::csv::parse_legacy_timestamp;
 use crate::naming::SessionStem;
@@ -21,7 +21,12 @@ use crate::native::NativeCsvRow;
 use crate::normalized::StandaloneInputFormat;
 use crate::standalone::detect_csv_format;
 
-/// Safe inspect preview: compatibility fields and ordered input metadata.
+/// Safe inspect preview: output identity and ordered input metadata.
+///
+/// Top-level `source_id` and `fold` describe the derived output, not
+/// necessarily each input. Homogeneous previews keep the shared input
+/// identity. Heterogeneous previews use `mixed` with no fold. Format-neutral
+/// input entries carry per-file source and fold.
 ///
 /// Absolute input paths are not stored, debugged, or serialized.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -36,7 +41,7 @@ pub struct ConcatenationPreview {
 }
 
 impl ConcatenationPreview {
-    /// Source identifier shared by every input.
+    /// Source identifier of the derived output.
     #[must_use]
     pub fn source_id(&self) -> &SourceId {
         &self.source_id
@@ -54,7 +59,7 @@ impl ConcatenationPreview {
         self.interval
     }
 
-    /// Fold shared by every input, when BitBabbler.
+    /// Fold of the derived output, when BitBabbler and homogeneous.
     #[must_use]
     pub fn fold(&self) -> Option<Fold> {
         self.fold
@@ -97,8 +102,11 @@ pub fn inspect_legacy_csvs(paths: &[PathBuf]) -> Result<ConcatenationPreview, Re
     Ok(inspect_csv_inputs_ordered(paths, false)?.preview)
 }
 
-/// Inspects current, legacy, or mixed CSV inputs and returns a normalized
-/// preview without retaining rows or absolute paths.
+/// Inspects current, legacy, or mixed-format CSV inputs and returns a
+/// normalized preview without retaining rows or absolute paths.
+///
+/// Format-neutral compatibility requires matching sample bits and interval.
+/// Source and fold may differ; heterogeneous output identity is `mixed`.
 pub fn inspect_csv_inputs(paths: &[PathBuf]) -> Result<ConcatenationPreview, RecordingError> {
     Ok(inspect_csv_inputs_ordered(paths, true)?.preview)
 }
@@ -138,7 +146,7 @@ pub(crate) fn inspect_csv_inputs_ordered(
         if format == StandaloneInputFormat::CurrentCsv && !allow_current {
             return Err(RecordingError::NativeConcatenationInput { basename });
         }
-        validate_source(stem.source(), format)?;
+        validate_input_source(stem.source(), format)?;
 
         let inspected = inspect_one_csv(path, &basename, stem.sample_bits(), format)?;
         match &expected {
@@ -151,12 +159,14 @@ pub(crate) fn inspect_csv_inputs_ordered(
                     basename: basename.clone(),
                 });
             }
-            Some(compat) => check_compat(compat, &stem, &basename)?,
+            Some(compat) => check_compat(compat, &stem, &basename, allow_current)?,
         }
         files.push(InspectedFile {
             path: path.clone(),
             basename,
             format,
+            source_id: stem.source().clone(),
+            fold: stem.fold(),
             sha256: inspected.sha256,
             row_count: inspected.row_count,
             first: inspected.first,
@@ -179,6 +189,7 @@ pub(crate) fn inspect_csv_inputs_ordered(
         }
     }
 
+    let (source_id, fold) = output_identity(&files);
     let mut next_index = 1u64;
     let mut total_rows = 0u64;
     let mut entries = Vec::with_capacity(files.len());
@@ -207,6 +218,7 @@ pub(crate) fn inspect_csv_inputs_ordered(
                 output_end,
                 file.format,
             )?
+            .with_provenance(file.source_id, file.fold)?
         } else {
             ConcatenationInputEntry::new(
                 file.basename,
@@ -226,10 +238,10 @@ pub(crate) fn inspect_csv_inputs_ordered(
     };
     Ok(OrderedInspection {
         preview: ConcatenationPreview {
-            source_id: compat.source,
+            source_id,
             sample_bits: compat.sample_bits,
             interval: compat.interval,
-            fold: compat.fold,
+            fold,
             total_rows,
             inputs: entries,
         },
@@ -249,10 +261,26 @@ struct InspectedFile {
     path: PathBuf,
     basename: String,
     format: StandaloneInputFormat,
+    source_id: SourceId,
+    fold: Option<Fold>,
     sha256: ContentSha256,
     row_count: u64,
     first: UtcTimestamp,
     last: UtcTimestamp,
+}
+
+fn output_identity(files: &[InspectedFile]) -> (SourceId, Option<Fold>) {
+    let first = files
+        .first()
+        .expect("BUG: concatenation inspection requires at least one file");
+    if files
+        .iter()
+        .any(|file| file.source_id != first.source_id || file.fold != first.fold)
+    {
+        (mixed_source_id(), None)
+    } else {
+        (first.source_id.clone(), first.fold)
+    }
 }
 
 pub(crate) struct RowScan {
@@ -525,53 +553,19 @@ fn parse_legacy_csv_line(
     Ok((timestamp, ones))
 }
 
-fn validate_source(source: &SourceId, format: StandaloneInputFormat) -> Result<(), RecordingError> {
-    let supported = match format {
-        StandaloneInputFormat::LegacyV3Csv => {
-            matches!(
-                source.as_str(),
-                SOURCE_ID_BITB | SOURCE_ID_TRNG | SOURCE_ID_PSEUDO
-            )
-        }
-        StandaloneInputFormat::CurrentCsv => matches!(
-            source.as_str(),
-            SOURCE_ID_BITB | SOURCE_ID_TRNG | SOURCE_ID_RDSEED | SOURCE_ID_PSEUDO
-        ),
-        StandaloneInputFormat::Bin => false,
-        StandaloneInputFormat::FlatLegacyConcatenation => false,
-    };
-    if !supported {
-        return Err(RecordingError::UnsupportedVersion {
-            reason: format!(
-                "standalone {} does not include source {source}",
-                format_name(format)
-            ),
-        });
-    }
-    Ok(())
-}
-
-fn format_name(format: StandaloneInputFormat) -> &'static str {
-    match format {
-        StandaloneInputFormat::CurrentCsv => "current csv",
-        StandaloneInputFormat::LegacyV3Csv => "legacy v3 csv",
-        StandaloneInputFormat::Bin => "bin",
-        StandaloneInputFormat::FlatLegacyConcatenation => "flat legacy concatenation",
-    }
-}
-
 fn check_compat(
     expected: &Compatibility,
     stem: &SessionStem,
     basename: &str,
+    allow_current: bool,
 ) -> Result<(), RecordingError> {
-    let mismatch = if expected.source != *stem.source() {
+    let mismatch = if !allow_current && expected.source != *stem.source() {
         Some(ConcatenationCompatibilityField::Source)
     } else if expected.sample_bits != stem.sample_bits() {
         Some(ConcatenationCompatibilityField::SampleBits)
     } else if expected.interval != stem.interval() {
         Some(ConcatenationCompatibilityField::Interval)
-    } else if expected.fold != stem.fold() {
+    } else if !allow_current && expected.fold != stem.fold() {
         Some(ConcatenationCompatibilityField::Fold)
     } else {
         None

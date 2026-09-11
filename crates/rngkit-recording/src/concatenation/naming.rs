@@ -11,6 +11,7 @@ use crate::naming::SessionStem;
 /// Parsed derived concatenation directory/file stem.
 ///
 /// Grammar: `YYYYMMDDTHHMMSS_concat_<source>_s<bits>_i<seconds>[_f<fold>]`.
+/// Heterogeneous concatenations use source token `mixed` with no fold suffix.
 /// This is independent of [`SessionStem`] and cannot be parsed as a collected
 /// session name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +26,8 @@ impl ConcatenationStem {
     ///
     /// The timestamp is the local creation time of the derived artifact, not a
     /// claim about the first input sample. BitBabbler requires `_f0` through
-    /// `_f4`. Other sources must not have a fold suffix.
+    /// `_f4`. Other sources, including the derived-output token `mixed`, must
+    /// not have a fold suffix. `mixed` is not a collectable entropy source.
     ///
     /// # Errors
     ///

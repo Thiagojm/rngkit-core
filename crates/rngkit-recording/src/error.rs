@@ -111,7 +111,7 @@ pub enum RecordingError {
         /// Input basename.
         basename: String,
     },
-    /// Concatenation inputs do not share source, bits, interval, or fold.
+    /// Concatenation inputs do not share a required compatibility field.
     #[error("concatenation inputs {left_basename} and {right_basename} have incompatible {field}")]
     IncompatibleConcatenationInputs {
         /// Field that differed.
