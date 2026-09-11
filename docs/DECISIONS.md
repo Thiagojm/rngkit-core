@@ -136,8 +136,8 @@
     manifests store basenames/hashes only
 - Why: centralize parsing, normalization, compatibility, and provenance before
   Tauri Reports and Combine integration
-- Impact: no Tauri or source-adapter changes; application integration remains a
-  separately authorized phase and must use an exact reachable revision
+- Impact: consumers must pin an exact reachable revision; `mixed` is not a
+  collectable source
 
 ### MSRV-compatible Excel stack (2026-08-21)
 

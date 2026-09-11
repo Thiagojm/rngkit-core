@@ -106,11 +106,12 @@ descriptive cumulative statistics, and can export an Excel report.
   and local-clock context from a valid sibling CSV. Focused XLSX tests and the
   complete stable/MSRV workspace matrix passed locally; physical hardware tests
   remained ignored.
-- **Mixed-source concatenation Phase 1 (2026-09-11):** format-neutral Combine
-  accepts matching bits/interval across sources or folds; mixed bundles are
-  schema 3 with token `mixed` and label `Mixed sources`. Focused
-  concatenation/XLSX tests and the complete stable/MSRV workspace matrix passed
-  locally. Hardware tests stayed ignored. App pin remains a later phase.
+- **Mixed-source concatenation (2026-09-11):** format-neutral Combine accepts
+  matching bits/interval across sources or folds; mixed bundles are schema 3
+  with token `mixed` and label `Mixed sources`. Focused concatenation/XLSX
+  tests and the complete stable/MSRV workspace matrix passed locally. Hardware
+  tests stayed ignored. Published at `23a67aa`; the app user reported native
+  Combine acceptance the same day.
 
 ## Source freshness integration (2026-09-10)
 

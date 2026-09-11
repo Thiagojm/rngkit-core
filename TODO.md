@@ -34,16 +34,13 @@
 
 ## In progress
 
-- Mixed-source concatenation Phase 1 (core + XLSX) implemented. Homogeneous
-  schema 2 and mixed schema 3 (`mixed` / `Mixed sources`) are covered by
-  locked tests. Awaiting user validation of mixed vs homogeneous bundles
-  and optional mixed XLSX. Optional Excel inspection of recorded-time and
-  BIN/index workbooks remains unverified.
+- Optional Excel inspection of recorded-time and BIN/index workbooks remains
+  unverified.
 
 ## Next steps
 
-- After Phase 1 validation and a separate Phase 2 request: pin the published
-  exact `rngkit-core` revision in the Tauri app and update Combine/Help.
+- Mixed-source concatenation is published at `23a67aa` and pinned by the app.
+  The user reported successful native Combine acceptance on 2026-09-11.
 
 ## Backlog
 
