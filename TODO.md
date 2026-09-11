@@ -39,6 +39,10 @@
 
 ## Next steps
 
+- Mixed-source concatenation design and plan reviewed and corrected:
+  `docs/specs/2026-09-11-mixed-source-concatenation-design.md` and
+  `docs/plans/2026-09-11-mixed-source-concatenation-plan.md`.
+  Implementation has not started; Phase 1 awaits an explicit execution request.
 - Pin the published exact revision in the Tauri app and validate the integrated
   report workflow. Inspect generated workbooks in Excel if desired.
 
